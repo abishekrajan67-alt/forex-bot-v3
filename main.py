@@ -8,11 +8,26 @@ Full pipeline per scan cycle, per pair:
 3. Run build_signal_v3() - the new confluence engine (Stages 1-6)
 4. If a signal fires and cooldown allows -> send Telegram alert
 
-Run: python3 main.py
+DEPLOYMENT NOTE (Render free tier):
+Render's free Web Service tier spins down after 15 minutes with no
+HTTP traffic. Since this bot has no natural web server (it's a
+background loop), we run a tiny Flask health-check endpoint on a
+background thread so Render sees HTTP activity and keeps the service
+classified correctly. You still need an external pinger (e.g. the
+free tier of UptimeRobot) hitting this service's public URL every
+5-10 minutes to actually prevent the free tier from sleeping -
+the Flask server alone does not keep it awake by itself, it just
+gives Render something to route a health check to.
+
+Run locally: python3 main.py
+Run on Render: same start command, PORT env var is auto-provided.
 """
 
+import os
 import time
+import threading
 from datetime import datetime
+from flask import Flask
 
 from config import PAIRS, SCAN_SECONDS, PAIR_DELAY_SECONDS, COOLDOWN_SECONDS, get_pair_config
 from data_connector import get_candles, get_dxy_candles
@@ -29,6 +44,37 @@ ENTRY_INTERVAL = "5min"
 HTF_DAILY = "1day"
 HTF_4H = "4h"
 HTF_1H = "1h"
+
+
+# ======================================================
+# HEALTH CHECK SERVER (keeps Render free tier classified as alive)
+# ======================================================
+
+app = Flask(__name__)
+
+# Tracks last scan time/result so the health endpoint shows real status,
+# not just "the process is running" but "the bot is actually scanning"
+_bot_status = {
+    "started_at": datetime.utcnow().isoformat(),
+    "last_scan_at": None,
+    "last_scan_pair": None,
+}
+
+
+@app.route("/")
+def health():
+    return {
+        "status": "alive",
+        "bot": "forex-bot-v3",
+        "started_at": _bot_status["started_at"],
+        "last_scan_at": _bot_status["last_scan_at"],
+        "last_scan_pair": _bot_status["last_scan_pair"],
+    }
+
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 
 def run_pair_scan(pair):
@@ -91,10 +137,13 @@ def run_pair_scan(pair):
         pair_config=cfg,
     )
 
+    _bot_status["last_scan_at"] = datetime.utcnow().isoformat()
+    _bot_status["last_scan_pair"] = pair
+
     return signal
 
 
-def main():
+def run_bot_loop():
     send_telegram(
         "🤖 <b>Forex Bot V3 — ICT Confluence ONLINE</b>\n\n"
         "Engine:\n"
@@ -137,6 +186,16 @@ def main():
                 print(f"{pair}: Error: {e}")
 
         time.sleep(SCAN_SECONDS)
+
+
+def main():
+    # Health server runs in a background thread so Render has something
+    # to route HTTP health checks to. The actual bot loop runs in the
+    # main thread below, completely independent of the web server.
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+
+    run_bot_loop()
 
 
 if __name__ == "__main__":
