@@ -26,7 +26,7 @@ Run on Render: same start command, PORT env var is auto-provided.
 import os
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask
 
 from config import PAIRS, SCAN_SECONDS, PAIR_DELAY_SECONDS, COOLDOWN_SECONDS, get_pair_config
@@ -55,7 +55,7 @@ app = Flask(__name__)
 # Tracks last scan time/result so the health endpoint shows real status,
 # not just "the process is running" but "the bot is actually scanning"
 _bot_status = {
-    "started_at": datetime.utcnow().isoformat(),
+    "started_at": datetime.now(timezone.utc).isoformat(),
     "last_scan_at": None,
     "last_scan_pair": None,
     "last_scan_result": None,
@@ -89,8 +89,16 @@ def run_pair_scan(pair):
     # Update status as soon as a scan attempt starts, not just on success -
     # this way the health endpoint reflects reality even when the scan
     # exits early (outside session, insufficient data, etc.)
-    _bot_status["last_scan_at"] = datetime.utcnow().isoformat()
+    _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
     _bot_status["last_scan_pair"] = pair
+
+    # Session check FIRST - skip all data fetching (and API quota usage)
+    # entirely when markets are closed or outside London/NY hours.
+    if not execution_session_ok():
+        msg = f"Outside London/New York execution window (session={current_session()})"
+        print(f"{pair}: {msg}")
+        _bot_status["last_scan_result"] = msg
+        return None
 
     daily_c = get_candles(pair, HTF_DAILY, 60)
     h4_c = get_candles(pair, HTF_4H, 120)
@@ -111,12 +119,6 @@ def run_pair_scan(pair):
         return None
 
     price = entry_c[-1]["close"]
-
-    if not execution_session_ok():
-        msg = f"Outside London/New York execution window (session={current_session()})"
-        print(f"{pair}: {msg}")
-        _bot_status["last_scan_result"] = msg
-        return None
 
     # FVG/IFVG (reused from v2)
     fvgs = detect_fvgs(entry_c, 80)
