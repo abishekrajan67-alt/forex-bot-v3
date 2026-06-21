@@ -58,6 +58,7 @@ _bot_status = {
     "started_at": datetime.utcnow().isoformat(),
     "last_scan_at": None,
     "last_scan_pair": None,
+    "last_scan_result": None,
 }
 
 
@@ -69,6 +70,7 @@ def health():
         "started_at": _bot_status["started_at"],
         "last_scan_at": _bot_status["last_scan_at"],
         "last_scan_pair": _bot_status["last_scan_pair"],
+        "last_scan_result": _bot_status["last_scan_result"],
     }
 
 
@@ -84,6 +86,12 @@ def run_pair_scan(pair):
     """
     cfg = get_pair_config(pair)
 
+    # Update status as soon as a scan attempt starts, not just on success -
+    # this way the health endpoint reflects reality even when the scan
+    # exits early (outside session, insufficient data, etc.)
+    _bot_status["last_scan_at"] = datetime.utcnow().isoformat()
+    _bot_status["last_scan_pair"] = pair
+
     daily_c = get_candles(pair, HTF_DAILY, 60)
     h4_c = get_candles(pair, HTF_4H, 120)
     h1_c = get_candles(pair, HTF_1H, 160)
@@ -91,18 +99,23 @@ def run_pair_scan(pair):
     dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
 
     if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
-        print(f"{pair}: Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
-              f"1H={len(h1_c)} Entry={len(entry_c)}).")
+        msg = (f"Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
+               f"1H={len(h1_c)} Entry={len(entry_c)})")
+        print(f"{pair}: {msg}")
+        _bot_status["last_scan_result"] = msg
         return None
 
     if not entry_c:
         print(f"{pair}: No entry timeframe data.")
+        _bot_status["last_scan_result"] = "No entry timeframe data"
         return None
 
     price = entry_c[-1]["close"]
 
     if not execution_session_ok():
-        print(f"{pair}: Outside London/New York execution window. Session={current_session()}")
+        msg = f"Outside London/New York execution window (session={current_session()})"
+        print(f"{pair}: {msg}")
+        _bot_status["last_scan_result"] = msg
         return None
 
     # FVG/IFVG (reused from v2)
@@ -137,8 +150,10 @@ def run_pair_scan(pair):
         pair_config=cfg,
     )
 
-    _bot_status["last_scan_at"] = datetime.utcnow().isoformat()
-    _bot_status["last_scan_pair"] = pair
+    _bot_status["last_scan_result"] = (
+        f"Signal: {signal['side']} @ {signal['entry']} ({signal['confidence']}%)"
+        if signal else "No signal this cycle (criteria not met)"
+    )
 
     return signal
 
