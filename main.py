@@ -161,14 +161,17 @@ def run_pair_scan(pair):
 
 
 def run_bot_loop():
-    send_telegram(
-        "🤖 <b>Forex Bot V3 — ICT Confluence ONLINE</b>\n\n"
-        "Engine:\n"
-        "HTF Structure (BOS/MSS) → Liquidity Sweep → PD Array (OB/FVG) → DXY Correlation\n\n"
-        f"Pairs: {', '.join(PAIRS)}\n"
-        "Mode: Paper alerts only\n"
-        f"Scan: Every {SCAN_SECONDS // 60} minutes"
-    )
+    try:
+        send_telegram(
+            "🤖 <b>Forex Bot V3 — ICT Confluence ONLINE</b>\n\n"
+            "Engine:\n"
+            "HTF Structure (BOS/MSS) → Liquidity Sweep → PD Array (OB/FVG) → DXY Correlation\n\n"
+            f"Pairs: {', '.join(PAIRS)}\n"
+            "Mode: Paper alerts only\n"
+            f"Scan: Every {SCAN_SECONDS // 60} minutes"
+        )
+    except Exception as e:
+        print(f"Startup Telegram message failed (non-fatal): {e}")
 
     last_signal_time = {}
     last_signal_side = {}
