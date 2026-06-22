@@ -148,11 +148,11 @@ def detect_ifvgs(fvgs, current_close):
 
 def current_session():
     h = datetime.now(NY_TZ).hour
-    if 19 <= h or h < 1:
+    if 19 <= h or h < 2:
         return "ASIAN"
-    if 2 <= h < 6:
+    if 2 <= h < 8:
         return "LONDON"
-    if 7 <= h < 11:
+    if 8 <= h < 13:
         return "NEW_YORK"
     return "OFF-SESSION"
 
