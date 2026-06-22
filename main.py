@@ -157,8 +157,11 @@ def run_pair_scan(pair):
         return signal
 
     except Exception as e:
+        import traceback
         msg = f"ERROR: {str(e)}"
+        full_error = traceback.format_exc()
         print(f"{pair}: {msg}")
+        print(f"{pair}: FULL TRACEBACK:\n{full_error}")
         _bot_status["last_scan_result"] = msg
         return None
 
