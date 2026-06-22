@@ -86,78 +86,81 @@ def run_pair_scan(pair):
     """
     cfg = get_pair_config(pair)
 
-    # Update status as soon as a scan attempt starts, not just on success -
-    # this way the health endpoint reflects reality even when the scan
-    # exits early (outside session, insufficient data, etc.)
     _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
     _bot_status["last_scan_pair"] = pair
 
-    # Session check FIRST - skip all data fetching (and API quota usage)
-    # entirely when markets are closed or outside London/NY hours.
-    if not execution_session_ok():
-        msg = f"Outside London/New York execution window (session={current_session()})"
+    try:
+        # Session check FIRST - skip all data fetching (and API quota usage)
+        # entirely when markets are closed or outside London/NY hours.
+        if not execution_session_ok():
+            msg = f"Outside London/New York execution window (session={current_session()})"
+            print(f"{pair}: {msg}")
+            _bot_status["last_scan_result"] = msg
+            return None
+
+        daily_c = get_candles(pair, HTF_DAILY, 60)
+        h4_c = get_candles(pair, HTF_4H, 120)
+        h1_c = get_candles(pair, HTF_1H, 160)
+        entry_c = get_candles(pair, ENTRY_INTERVAL, 200)
+        dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
+
+        if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
+            msg = (f"Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
+                   f"1H={len(h1_c)} Entry={len(entry_c)})")
+            print(f"{pair}: {msg}")
+            _bot_status["last_scan_result"] = msg
+            return None
+
+        if not entry_c:
+            msg = "No entry timeframe data"
+            print(f"{pair}: {msg}")
+            _bot_status["last_scan_result"] = msg
+            return None
+
+        price = entry_c[-1]["close"]
+
+        fvgs = detect_fvgs(entry_c, 80)
+        ifvgs = detect_ifvgs(fvgs, price)
+
+        atr_value = atr(entry_c, 14) or 0.0010
+        candle_quality_buy = candle_quality(entry_c[-1], "BUY")
+        candle_quality_sell = candle_quality(entry_c[-1], "SELL")
+        spike, vol_ratio = volume_spike(entry_c)
+
+        print(
+            f"{datetime.now()} | {pair} | Price={price} | "
+            f"DXY fallback={dxy_fallback} | Session={current_session()}"
+        )
+
+        signal = build_signal_v3(
+            pair=pair,
+            price=price,
+            daily_candles=daily_c,
+            h4_candles=h4_c,
+            h1_candles=h1_c,
+            entry_candles=entry_c,
+            dxy_candles=dxy_c,
+            fvgs=fvgs,
+            ifvgs=ifvgs,
+            atr_value=atr_value,
+            candle_quality_buy=candle_quality_buy,
+            candle_quality_sell=candle_quality_sell,
+            volume_spike_result=(spike, vol_ratio),
+            pair_config=cfg,
+        )
+
+        _bot_status["last_scan_result"] = (
+            f"Signal: {signal['side']} @ {signal['entry']} ({signal['confidence']}%)"
+            if signal else "No signal this cycle (criteria not met)"
+        )
+
+        return signal
+
+    except Exception as e:
+        msg = f"ERROR: {str(e)}"
         print(f"{pair}: {msg}")
         _bot_status["last_scan_result"] = msg
         return None
-
-    daily_c = get_candles(pair, HTF_DAILY, 60)
-    h4_c = get_candles(pair, HTF_4H, 120)
-    h1_c = get_candles(pair, HTF_1H, 160)
-    entry_c = get_candles(pair, ENTRY_INTERVAL, 200)
-    dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
-
-    if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
-        msg = (f"Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
-               f"1H={len(h1_c)} Entry={len(entry_c)})")
-        print(f"{pair}: {msg}")
-        _bot_status["last_scan_result"] = msg
-        return None
-
-    if not entry_c:
-        print(f"{pair}: No entry timeframe data.")
-        _bot_status["last_scan_result"] = "No entry timeframe data"
-        return None
-
-    price = entry_c[-1]["close"]
-
-    # FVG/IFVG (reused from v2)
-    fvgs = detect_fvgs(entry_c, 80)
-    ifvgs = detect_ifvgs(fvgs, price)
-
-    # ATR / candle quality / volume (reused from v2)
-    atr_value = atr(entry_c, 14) or 0.0010
-    candle_quality_buy = candle_quality(entry_c[-1], "BUY")
-    candle_quality_sell = candle_quality(entry_c[-1], "SELL")
-    spike, vol_ratio = volume_spike(entry_c)
-
-    print(
-        f"{datetime.now()} | {pair} | Price={price} | "
-        f"DXY fallback={dxy_fallback} | Session={current_session()}"
-    )
-
-    signal = build_signal_v3(
-        pair=pair,
-        price=price,
-        daily_candles=daily_c,
-        h4_candles=h4_c,
-        h1_candles=h1_c,
-        entry_candles=entry_c,
-        dxy_candles=dxy_c,
-        fvgs=fvgs,
-        ifvgs=ifvgs,
-        atr_value=atr_value,
-        candle_quality_buy=candle_quality_buy,
-        candle_quality_sell=candle_quality_sell,
-        volume_spike_result=(spike, vol_ratio),
-        pair_config=cfg,
-    )
-
-    _bot_status["last_scan_result"] = (
-        f"Signal: {signal['side']} @ {signal['entry']} ({signal['confidence']}%)"
-        if signal else "No signal this cycle (criteria not met)"
-    )
-
-    return signal
 
 
 def run_bot_loop():
