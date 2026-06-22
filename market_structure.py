@@ -210,6 +210,7 @@ def structure_snapshot(candles, label, left=2, right=2):
         "last_event_direction": result["last_event"]["direction"] if result["last_event"] else None,
         "last_event_time": result["last_event"]["time"] if result["last_event"] else None,
         "recent_events": result["events"],
+        "swings": result["swings"],
     }
 
 
