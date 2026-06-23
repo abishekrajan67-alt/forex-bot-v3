@@ -6,6 +6,7 @@ MAIN.PY - FOREX BOT V3 (Final Version with Price Reconciliation + Broker Confirm
 import os
 import time
 import threading
+import MetaTrader5 as mt5
 from datetime import datetime, timezone
 from flask import Flask
 
@@ -174,7 +175,30 @@ def get_broker_price(pair):
     print(f"[BROKER] get_broker_price({pair}) → Not implemented yet")
     return None   # ← Change this when you implement real broker connection
 
+def get_broker_price(pair):
+    """
+    Real implementation for MetaTrader 5.
+    Returns current bid price or None if failed.
+    """
+    if not mt5.initialize():
+        print(f"[MT5] Failed to initialize MetaTrader 5 for {pair}")
+        return None
 
+    symbol = pair.replace("/", "")  # e.g. "XAUUSD" or "GBPUSD"
+    tick = mt5.symbol_info_tick(symbol)
+
+    if tick is None:
+        print(f"[MT5] Failed to get tick for {symbol}")
+        mt5.shutdown()
+        return None
+
+    price = tick.bid
+    print(f"[MT5] Broker price for {pair}: {price}")
+    mt5.shutdown()  # Clean up
+    return price
+
+def confirm_broker_price_before_alert(signal):
+    # ... (the confirmation function from earlier)
 def confirm_broker_price_before_alert(signal):
     """
     Final safety check before sending Telegram alert.
