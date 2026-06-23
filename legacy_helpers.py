@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 NY_TZ = ZoneInfo("America/New_York")
 LITHUANIA_TZ = ZoneInfo("Europe/Vilnius")
 
+# TIME HELPERS
 def parse_time(c):
     return datetime.fromisoformat(c["time"]).astimezone(timezone.utc) if "T" in c["time"] or "+" in c["time"] else datetime.fromisoformat(c["time"]).replace(tzinfo=timezone.utc)
 
@@ -19,7 +20,37 @@ def lithuania_time():
 def ny_time():
     return datetime.now(NY_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-# ATR, candle_quality, volume_spike, FVG functions (same as before)...
+# ATR / CANDLE / VOLUME (fixed)
+def atr(candles, period=14):
+    if len(candles) < period + 1:
+        return None
+    trs = []
+    for i in range(1, len(candles)):
+        high = candles[i]["high"]
+        low = candles[i]["low"]
+        prev_close = candles[i - 1]["close"]
+        trs.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+    return round(sum(trs[-period:]) / period, 5)
+
+def candle_quality(candle, side):
+    body = abs(candle["close"] - candle["open"])
+    full_range = candle["high"] - candle["low"]
+    if full_range <= 0:
+        return False, "Invalid candle"
+    body_ratio = body / full_range
+    upper_wick = candle["high"] - max(candle["open"], candle["close"])
+    lower_wick = min(candle["open"], candle["close"]) - candle["low"]
+    upper_ratio = upper_wick / full_range
+    lower_ratio = lower_wick / full_range
+    if body_ratio < 0.60:
+        return False, f"Weak body {round(body_ratio * 100)}%"
+    if side == "BUY" and upper_ratio > 0.30:
+        return False, f"Upper wick too large {round(upper_ratio * 100)}%"
+    if side == "SELL" and lower_ratio > 0.30:
+        return False, f"Lower wick too large {round(lower_ratio * 100)}%"
+    return True, f"Good displacement candle body {round(body_ratio * 100)}%"
+
+# ... (rest same as your original - copy FVG, session, etc.)
 
 def current_session():
     h = datetime.now(NY_TZ).hour
@@ -27,42 +58,14 @@ def current_session():
         return "ASIAN"
     if 2 <= h < 8:
         return "LONDON"
-    if 8 <= h < 17:  # Extended NY
+    if 8 <= h < 17:
         return "NEW_YORK"
     return "OFF-SESSION"
 
 def execution_session_ok():
     return current_session() in ["LONDON", "NEW_YORK"]
 
-# ... rest of file same (session_range, ndog, etc.)    if full_range <= 0:
-        return False, "Invalid candle"
-
-    body_ratio = body / full_range
-    upper_wick = candle["high"] - max(candle["open"], candle["close"])
-    lower_wick = min(candle["open"], candle["close"]) - candle["low"]
-    upper_ratio = upper_wick / full_range
-    lower_ratio = lower_wick / full_range
-
-    if body_ratio < 0.60:
-        return False, f"Weak body {round(body_ratio * 100)}%"
-
-    if side == "BUY" and upper_ratio > 0.30:
-        return False, f"Upper wick too large {round(upper_ratio * 100)}%"
-
-    if side == "SELL" and lower_ratio > 0.30:
-        return False, f"Lower wick too large {round(lower_ratio * 100)}%"
-
-    return True, f"Good displacement candle body {round(body_ratio * 100)}%"
-
-
-def volume_spike(candles, lookback=30, multiplier=1.3):
-    if len(candles) < lookback + 1:
-        return False, 1.0
-
-    previous = candles[-lookback - 1:-1]
-    current = candles[-1]["volume"]
-    avg = sum(c["volume"] for c in previous) / len(previous)
-
+# (copy the rest of your file)
     if avg <= 0:
         return False, 1.0
 
