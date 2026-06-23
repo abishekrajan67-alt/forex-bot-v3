@@ -225,4 +225,6 @@ def main():
 
 
 if __name__ == "__main__":
+    from telegram_alerts import send_telegram
+    send_telegram("🧪 FINAL TEST - Bot started")
     main()
