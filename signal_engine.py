@@ -1,9 +1,25 @@
 """
-SIGNAL ENGINE V3 - WITH PROFESSIONAL SLIPPAGE PROTECTION
+SIGNAL ENGINE V3
 ========================
-Updated risk calculation with dynamic slippage buffer.
-"""
+The rebuilt entry logic. Replaces the old "FVG present + indicators
+aligned" trigger with real ICT confluence:
 
+    1. HTF structure aligned (Daily/4H/1H trend matches side)
+    2. Recent liquidity sweep on entry TF supports the side
+    3. PD array present (FVG/IFVG OR Order Block) near price
+    4. Entry TF structure shows MSS/BOS in trade direction
+    5. DXY correlation check (confirms or at least doesn't contradict)
+    6. Candle quality + volume confirmation (kept from v2)
+
+A signal only fires if the HARD requirements are met (structure +
+sweep + PD array). Everything else (correlation, candle quality,
+volume) adds/subtracts confidence points but doesn't block the trade
+outright - except a strong DXY contradiction on GBP/USD, which is
+also a hard block (see pair_config, Stage 6).
+
+This module is pair-agnostic: pass in pre-fetched candle data for
+every timeframe + DXY, and it returns a signal dict or None.
+"""
 from market_structure import structure_snapshot
 from liquidity_sweep import latest_relevant_sweep, sweep_supports_side
 from order_blocks import active_order_blocks, nearest_order_block
@@ -11,7 +27,7 @@ from correlation_filter import correlation_check
 
 
 # ======================================================
-# HARD REQUIREMENT CHECKS (unchanged)
+# HARD REQUIREMENT CHECKS
 # ======================================================
 
 def htf_structure_aligned(side, daily_struct, h4_struct, h1_struct, min_aligned=2):
@@ -51,7 +67,7 @@ def find_pd_array(candles, swings, price, side, fvgs, ifvgs, atr_value, ob_impul
 
 
 # ======================================================
-# MAIN SIGNAL BUILDER (V3) - UPDATED
+# MAIN SIGNAL BUILDER (V3)
 # ======================================================
 
 def build_signal_v3(
@@ -86,7 +102,7 @@ def build_signal_v3(
         warnings = []
         confidence = 0
 
-        # HARD REQUIREMENT 1: HTF structure alignment
+        # ---- HARD REQUIREMENT 1: HTF structure alignment ----
         aligned, aligned_count, htf_reasons = htf_structure_aligned(
             side, daily_struct, h4_struct, h1_struct, min_aligned=min_htf_aligned
         )
@@ -95,7 +111,7 @@ def build_signal_v3(
         reasons.extend(htf_reasons)
         confidence += aligned_count * 12
 
-        # HARD REQUIREMENT 2: Liquidity sweep
+        # ---- HARD REQUIREMENT 2: Liquidity sweep ----
         sweep = latest_relevant_sweep(
             entry_candles, left=swing_left, right=swing_right,
             lookahead=15, max_age=pair_config.get("sweep_max_age", 20)
@@ -108,7 +124,7 @@ def build_signal_v3(
         )
         confidence += 20
 
-        # HARD REQUIREMENT 3: PD array
+        # ---- HARD REQUIREMENT 3: PD array ----
         entry_swings = entry_struct["swings"]
         pd_type, pd_array = find_pd_array(
             entry_candles, entry_swings, price, side, fvgs, ifvgs, atr_value, ob_impulse_pct
@@ -118,7 +134,7 @@ def build_signal_v3(
         reasons.append(f"{pd_type} entry zone active: {pd_array['low']} - {pd_array['high']}")
         confidence += 18
 
-        # Entry TF structure
+        # ---- Entry TF structure ----
         needed = "BULLISH" if side == "BUY" else "BEARISH"
         if entry_struct["trend"] == needed:
             if entry_struct["last_event_type"] == "MSS":
@@ -130,7 +146,7 @@ def build_signal_v3(
         else:
             warnings.append(f"Entry TF structure ({entry_struct['trend']}) not yet confirming {needed}")
 
-        # Correlation check
+        # ---- DXY Correlation ----
         corr = correlation_check(pair, side, dxy_struct)
         confidence += corr["weight"]
         if corr["supports"]:
@@ -140,7 +156,7 @@ def build_signal_v3(
             if pair == "GBP/USD" and corr["weight"] <= -15:
                 continue
 
-        # Candle quality
+        # ---- Candle quality ----
         good_candle, candle_note = candle_quality_buy if side == "BUY" else candle_quality_sell
         if good_candle:
             confidence += 8
@@ -148,7 +164,7 @@ def build_signal_v3(
         else:
             warnings.append(candle_note)
 
-        # Volume confirmation
+        # ---- Volume ----
         if spike:
             confidence += 6
             reasons.append(f"Volume confirmation: {vol_ratio}x average")
@@ -156,15 +172,14 @@ def build_signal_v3(
             warnings.append(f"No strong volume confirmation: {vol_ratio}x average")
 
         # ======================================================
-        # PROFESSIONAL RISK CALCULATION WITH SLIPPAGE PROTECTION
+        # PROFESSIONAL SLIPPAGE PROTECTION (UPDATED)
         # ======================================================
         base_atr = atr_value or 0.0010
 
-        # Dynamic slippage buffer - professional approach
         if pair == "XAU/USD":
-            slippage_multiplier = 0.65   # Gold volatility
+            slippage_multiplier = 0.65
         else:
-            slippage_multiplier = 0.45   # GBP/USD
+            slippage_multiplier = 0.45
 
         slippage_buffer = base_atr * slippage_multiplier
         min_buffer = pair_config.get("min_sl_distance", 0.0010) * 0.8
@@ -182,8 +197,6 @@ def build_signal_v3(
             take_profit = round(price - risk * pair_config.get("rr_target", 2.0), 5)
 
         rr = round(abs(take_profit - price) / abs(price - stop_loss), 2)
-
-        print(f"[{pair} {side}] Slippage buffer: {slippage_buffer:.5f} | SL: {stop_loss} | RR: {rr}")
 
         if confidence >= min_confidence and rr >= pair_config.get("min_rr", 1.8):
             signals.append({
