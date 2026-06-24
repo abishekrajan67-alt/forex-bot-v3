@@ -163,9 +163,9 @@ def nearest_order_block(order_blocks, price, side, max_distance=None):
     candidates = [ob for ob in order_blocks if ob["type"] == wanted_type]
 
     if side == "BUY":
-        candidates = [ob for ob in candidates if ob["high"] <= price]
+        candidates = [ob for ob in candidates if ob["low"] <= price]
     else:
-        candidates = [ob for ob in candidates if ob["low"] >= price]
+        candidates = [ob for ob in candidates if ob["high"] >= price]
 
     if max_distance is not None:
         candidates = [

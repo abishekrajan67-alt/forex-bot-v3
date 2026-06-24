@@ -173,10 +173,12 @@ def analyze_structure(candles, left=2, right=2):
         # (so last_high/last_low always reflect the most recent relevant swing)
         for s in swings:
             if s["index"] == i:
-                if s["type"] == "HIGH" and (last_high is None or s["price"] > last_high["price"] if trend == "BULLISH" else False):
-                    pass  # handled by break logic above; avoid double-counting
-                if s["type"] == "LOW" and (last_low is None):
-                    pass
+                if s["type"] == "HIGH":
+                    if trend == "BULLISH" and (last_high is None or s["price"] > last_high["price"]):
+                        last_high = s
+                if s["type"] == "LOW":
+                    if trend == "BEARISH" and (last_low is None or s["price"] < last_low["price"]):
+                        last_low = s
 
     last_event = events[-1] if events else None
 
@@ -186,7 +188,7 @@ def analyze_structure(candles, left=2, right=2):
         "last_low": last_low,
         "last_event": last_event,
         "events": events[-10:],  # keep recent history only
-        "swings": swings[-20:],
+        "swings": swings[-50:],
     }
 
 

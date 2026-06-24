@@ -9,7 +9,7 @@ Enhanced version with:
 import os
 import time
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -78,7 +78,7 @@ def get_candles(pair, interval, outputsize=120, is_index=False):
     days_back = max(int(bars_to_days.get(interval, 30)) + 5, 5)
 
     to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    from_date = (datetime.now(timezone.utc) - __import__("datetime").timedelta(days=days_back)).strftime("%Y-%m-%d")
+    from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
     url = f"{BASE_URL}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
     params = {
