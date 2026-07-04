@@ -215,6 +215,89 @@ def gbpusd_data():
         return {"status": "error", "message": str(e)}, 500
 
 
+@app.route("/btcusd", methods=["GET"])
+def btcusd_data():
+    """Live BTC/USD data endpoint for Claude trading analysis"""
+    import requests as req
+
+    API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
+
+    try:
+        price_resp = req.get(
+            "https://api.twelvedata.com/price",
+            params={"symbol": "BTC/USD", "apikey": API_KEY},
+            timeout=10
+        ).json()
+
+        m5_resp = req.get(
+            "https://api.twelvedata.com/time_series",
+            params={
+                "symbol": "BTC/USD",
+                "interval": "5min",
+                "outputsize": 20,
+                "apikey": API_KEY
+            },
+            timeout=10
+        ).json()
+
+        m1_resp = req.get(
+            "https://api.twelvedata.com/time_series",
+            params={
+                "symbol": "BTC/USD",
+                "interval": "1min",
+                "outputsize": 15,
+                "apikey": API_KEY
+            },
+            timeout=10
+        ).json()
+
+        def calc_ema(values, period):
+            if len(values) < period:
+                return None
+            k = 2 / (period + 1)
+            ema = sum(values[:period]) / period
+            for v in values[period:]:
+                ema = v * k + ema * (1 - k)
+            return round(ema, 2)
+
+        m5_closes = [float(c["close"]) for c in m5_resp.get("values", [])]
+        m5_closes_asc = list(reversed(m5_closes))
+        ema9 = calc_ema(m5_closes_asc, 9)
+        ema21 = calc_ema(m5_closes_asc, 21)
+
+        current = float(price_resp.get("price", 0))
+
+        candle_summary = []
+        for c in m5_resp.get("values", [])[:5]:
+            o, cl = float(c["open"]), float(c["close"])
+            candle_summary.append({
+                "time": c["datetime"],
+                "open": o,
+                "high": float(c["high"]),
+                "low": float(c["low"]),
+                "close": cl,
+                "color": "GREEN" if cl > o else "RED",
+                "body": round(abs(cl - o), 2)
+            })
+
+        return {
+            "status": "ok",
+            "symbol": "BTC/USD",
+            "current_price": current,
+            "ema9_m5": ema9,
+            "ema21_m5": ema21,
+            "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
+            "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
+            "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
+            "last_5_m5_candles": candle_summary,
+            "m1_candles": m1_resp.get("values", [])[:10],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
