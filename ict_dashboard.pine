@@ -1,0 +1,240 @@
+//@version=5
+indicator("ICT Dashboard — Hirthick XAU/USD", overlay=true, max_boxes_count=50, max_lines_count=100)
+
+// ═══════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════
+show_emas       = input.bool(true,  "Show EMA 9/21")
+show_fvg        = input.bool(true,  "Show Fair Value Gaps")
+show_ob         = input.bool(true,  "Show Order Blocks")
+show_bos        = input.bool(true,  "Show BOS / CHoCH")
+show_pdhl       = input.bool(true,  "Show Previous Day H/L")
+show_sessions   = input.bool(true,  "Show Sessions (London/NY)")
+show_sweep      = input.bool(true,  "Show Liquidity Sweep Signal")
+show_atr        = input.bool(true,  "Show ATR SL Guide")
+
+// ═══════════════════════════════════════════════
+// 1. EMA 9 / EMA 21
+// ═══════════════════════════════════════════════
+ema9  = ta.ema(close, 9)
+ema21 = ta.ema(close, 21)
+
+bullish_ema = ema9 > ema21
+plot(show_emas ? ema9  : na, "EMA 9",  color=bullish_ema ? color.lime : color.red,   linewidth=2)
+plot(show_emas ? ema21 : na, "EMA 21", color=bullish_ema ? color.green : color.orange, linewidth=1)
+
+// Background color for trend bias
+bgcolor(show_emas ? (bullish_ema ? color.new(color.green, 95) : color.new(color.red, 95)) : na)
+
+// ═══════════════════════════════════════════════
+// 2. FAIR VALUE GAPS (FVG)
+// ═══════════════════════════════════════════════
+// FVG = gap between candle[2] high and candle[0] low (bullish)
+//       gap between candle[2] low and candle[0] high (bearish)
+
+bullish_fvg = show_fvg and (low[0] > high[2])
+bearish_fvg = show_fvg and (high[0] < low[2])
+
+var box[] fvg_boxes = array.new_box()
+
+if bullish_fvg
+    b = box.new(bar_index[2], high[2], bar_index + 20, low[0],
+         border_color=color.new(color.green, 50),
+         bgcolor=color.new(color.green, 85),
+         border_width=1)
+    array.push(fvg_boxes, b)
+
+if bearish_fvg
+    b = box.new(bar_index[2], low[2], bar_index + 20, high[0],
+         border_color=color.new(color.red, 50),
+         bgcolor=color.new(color.red, 85),
+         border_width=1)
+    array.push(fvg_boxes, b)
+
+// ═══════════════════════════════════════════════
+// 3. ORDER BLOCKS
+// ═══════════════════════════════════════════════
+// Bullish OB = last bearish candle before a significant up move
+// Bearish OB = last bullish candle before a significant down move
+
+ob_lookback = input.int(3, "OB Lookback", minval=1, maxval=10)
+big_move    = input.float(0.5, "OB Min Move (ATR multiplier)", minval=0.1)
+atr14       = ta.atr(14)
+
+bullish_ob = show_ob and close[ob_lookback] < open[ob_lookback] and 
+             (high - high[ob_lookback]) > (atr14 * big_move)
+
+bearish_ob = show_ob and close[ob_lookback] > open[ob_lookback] and 
+             (low[ob_lookback] - low) > (atr14 * big_move)
+
+if bullish_ob
+    box.new(bar_index[ob_lookback], high[ob_lookback], bar_index + 30, low[ob_lookback],
+         border_color=color.new(color.blue, 30),
+         bgcolor=color.new(color.blue, 80),
+         border_width=1)
+
+if bearish_ob
+    box.new(bar_index[ob_lookback], high[ob_lookback], bar_index + 30, low[ob_lookback],
+         border_color=color.new(color.purple, 30),
+         bgcolor=color.new(color.purple, 80),
+         border_width=1)
+
+// ═══════════════════════════════════════════════
+// 4. BOS / CHoCH
+// ═══════════════════════════════════════════════
+swing_length = input.int(5, "Swing Length for BOS/CHoCH")
+
+swing_high = ta.pivothigh(high, swing_length, swing_length)
+swing_low  = ta.pivotlow(low,  swing_length, swing_length)
+
+var float last_swing_high = na
+var float last_swing_low  = na
+
+if not na(swing_high)
+    last_swing_high := swing_high
+if not na(swing_low)
+    last_swing_low := swing_low
+
+// BOS — price breaks previous swing
+bos_bull = show_bos and not na(last_swing_high) and close > last_swing_high and close[1] <= last_swing_high
+bos_bear = show_bos and not na(last_swing_low)  and close < last_swing_low  and close[1] >= last_swing_low
+
+if bos_bull
+    line.new(bar_index[1], last_swing_high, bar_index, last_swing_high,
+         color=color.lime, width=2, style=line.style_solid)
+    label.new(bar_index, last_swing_high, "BOS ▲",
+         color=color.lime, textcolor=color.black, size=size.small,
+         style=label.style_label_down)
+
+if bos_bear
+    line.new(bar_index[1], last_swing_low, bar_index, last_swing_low,
+         color=color.red, width=2, style=line.style_solid)
+    label.new(bar_index, last_swing_low, "BOS ▼",
+         color=color.red, textcolor=color.white, size=size.small,
+         style=label.style_label_up)
+
+// CHoCH — Change of Character (first counter-trend break)
+var bool was_bullish = false
+choch_signal = bullish_ema != was_bullish
+was_bullish := bullish_ema
+
+if show_bos and choch_signal
+    label.new(bar_index, high, bullish_ema ? "CHoCH 🟢" : "CHoCH 🔴",
+         color=bullish_ema ? color.green : color.red,
+         textcolor=color.white, size=size.small,
+         style=label.style_label_down)
+
+// ═══════════════════════════════════════════════
+// 5. PREVIOUS DAY HIGH / LOW
+// ═══════════════════════════════════════════════
+is_new_day = ta.change(time("D")) != 0
+
+var float prev_day_high = na
+var float prev_day_low  = na
+var float day_high      = high
+var float day_low       = low
+
+if is_new_day
+    prev_day_high := day_high[1]
+    prev_day_low  := day_low[1]
+    day_high      := high
+    day_low       := low
+else
+    day_high := math.max(day_high, high)
+    day_low  := math.min(day_low,  low)
+
+plot(show_pdhl ? prev_day_high : na, "PDH",
+     color=color.orange, linewidth=1, style=plot.style_line)
+plot(show_pdhl ? prev_day_low  : na, "PDL",
+     color=color.orange, linewidth=1, style=plot.style_line)
+
+// Labels on new day
+if show_pdhl and is_new_day and not na(prev_day_high)
+    label.new(bar_index, prev_day_high, "PDH " + str.tostring(prev_day_high, "#.##"),
+         color=color.orange, textcolor=color.black,
+         size=size.tiny, style=label.style_label_left)
+    label.new(bar_index, prev_day_low, "PDL " + str.tostring(prev_day_low, "#.##"),
+         color=color.orange, textcolor=color.black,
+         size=size.tiny, style=label.style_label_left)
+
+// ═══════════════════════════════════════════════
+// 6. SESSION HIGHLIGHTER
+// ═══════════════════════════════════════════════
+// Times in UTC (Kaunas = UTC+3, so subtract 3hrs)
+london_session = time("", "0600-1500")   // 06:00-15:00 UTC = 09:00-18:00 Kaunas
+ny_session     = time("", "1300-2200")   // 13:00-22:00 UTC = 16:00-01:00 Kaunas
+asian_session  = time("", "0000-0600")   // 00:00-06:00 UTC = 03:00-09:00 Kaunas
+
+bgcolor(show_sessions and not na(london_session) ? color.new(color.blue,   96) : na, title="London Session")
+bgcolor(show_sessions and not na(ny_session)     ? color.new(color.yellow, 96) : na, title="NY Session")
+bgcolor(show_sessions and not na(asian_session)  ? color.new(color.gray,   96) : na, title="Asian Session")
+
+// ═══════════════════════════════════════════════
+// 7. LIQUIDITY SWEEP + DAILY SWEEP SIGNAL
+// ═══════════════════════════════════════════════
+sweep_lookback = input.int(10, "Sweep Lookback Bars")
+
+// Bullish sweep = price dips below recent low then closes back above
+recent_low   = ta.lowest(low,  sweep_lookback)
+recent_high  = ta.highest(high, sweep_lookback)
+
+bull_sweep = show_sweep and 
+             low < recent_low[1] and      // swept below recent low
+             close > low[1] and           // closed back above prior low
+             close > open                 // closed bullish
+
+bear_sweep = show_sweep and 
+             high > recent_high[1] and    // swept above recent high
+             close < high[1] and          // closed back below prior high
+             close < open                 // closed bearish
+
+plotshape(bull_sweep, "🔥 Bull Sweep", shape.triangleup,
+         location.belowbar, color.new(color.lime, 0), size=size.normal)
+plotshape(bear_sweep, "🔥 Bear Sweep", shape.triangledown,
+         location.abovebar, color.new(color.red, 0), size=size.normal)
+
+// Alert conditions
+alertcondition(bull_sweep, "BULL SWEEP 🟢", 
+     "XAU/USD — Bullish liquidity sweep detected. Look for M5 FVG and buy entry.")
+alertcondition(bear_sweep, "BEAR SWEEP 🔴", 
+     "XAU/USD — Bearish liquidity sweep detected. Look for M5 FVG and sell entry.")
+
+// ═══════════════════════════════════════════════
+// 8. ATR STOP LOSS GUIDE (table)
+// ═══════════════════════════════════════════════
+var table atr_table = table.new(position.bottom_right, 2, 5,
+     bgcolor=color.new(color.black, 70), border_color=color.gray, border_width=1)
+
+if show_atr and barstate.islast
+    atr_val = math.round(atr14, 2)
+    sl_tight  = math.round(atr14 * 0.3, 2)
+    sl_normal = math.round(atr14 * 0.5, 2)
+    sl_wide   = math.round(atr14 * 1.0, 2)
+
+    table.cell(atr_table, 0, 0, "ATR(14)",    text_color=color.yellow, text_size=size.small)
+    table.cell(atr_table, 1, 0, str.tostring(atr_val), text_color=color.yellow, text_size=size.small)
+    table.cell(atr_table, 0, 1, "SL Tight",   text_color=color.white,  text_size=size.small)
+    table.cell(atr_table, 1, 1, str.tostring(sl_tight),  text_color=color.lime,   text_size=size.small)
+    table.cell(atr_table, 0, 2, "SL Normal",  text_color=color.white,  text_size=size.small)
+    table.cell(atr_table, 1, 2, str.tostring(sl_normal), text_color=color.lime,   text_size=size.small)
+    table.cell(atr_table, 0, 3, "SL Wide",    text_color=color.white,  text_size=size.small)
+    table.cell(atr_table, 1, 3, str.tostring(sl_wide),   text_color=color.orange, text_size=size.small)
+    table.cell(atr_table, 0, 4, "0.11 lots",  text_color=color.gray,   text_size=size.small)
+    table.cell(atr_table, 1, 4, "$11/pt",     text_color=color.gray,   text_size=size.small)
+
+// ═══════════════════════════════════════════════
+// 9. BIAS LABEL (top right)
+// ═══════════════════════════════════════════════
+var table bias_table = table.new(position.top_right, 1, 3,
+     bgcolor=color.new(color.black, 60), border_color=color.gray, border_width=1)
+
+if barstate.islast
+    bias_color = bullish_ema ? color.lime : color.red
+    bias_text  = bullish_ema ? "BIAS: BULLISH 🟢" : "BIAS: BEARISH 🔴"
+    ema_text   = "EMA9: " + str.tostring(math.round(ema9, 2)) + 
+                 " | EMA21: " + str.tostring(math.round(ema21, 2))
+    price_vs   = close > ema9 ? "Price ABOVE EMA9 ✅" : "Price BELOW EMA9 ❌"
+
+    table.cell(bias_table, 0, 0, bias_text,  text_color=bias_color,  text_size=size.normal)
+    table.cell(bias_table, 0, 1, ema_text,   text_color=color.white, text_size=size.small)
+    table.cell(bias_table, 0, 2, price_vs,   text_color=color.white, text_size=size.small)
