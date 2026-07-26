@@ -27,9 +27,17 @@ from telegram_alerts import send_telegram, send_signal_v3
 
 # ========== MCP ==========
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 import httpx
 
-mcp = FastMCP("Forex Bot", stateless_http=True, json_response=True)
+mcp = FastMCP(
+    "Forex Bot",
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    )
+)
 
 @mcp.tool()
 async def get_gold_price() -> dict:
