@@ -1,5 +1,5 @@
 """
-MAIN.PY - FOREX BOT V3 (Clean Final Version) + MCP
+MAIN.PY - FOREX BOT V3 + MCP
 """
 
 import os
@@ -73,25 +73,12 @@ def health():
 
 @app.route("/gold", methods=["GET"])
 def gold_data():
-    """Live XAU/USD data endpoint for Claude trading analysis"""
     import requests as req
     API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
     try:
-        price_resp = req.get(
-            "https://api.twelvedata.com/price",
-            params={"symbol": "XAU/USD", "apikey": API_KEY},
-            timeout=10
-        ).json()
-        m5_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={"symbol": "XAU/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY},
-            timeout=10
-        ).json()
-        m1_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={"symbol": "XAU/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY},
-            timeout=10
-        ).json()
+        price_resp = req.get("https://api.twelvedata.com/price", params={"symbol": "XAU/USD", "apikey": API_KEY}, timeout=10).json()
+        m5_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "XAU/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY}, timeout=10).json()
+        m1_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "XAU/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
             if len(values) < period:
@@ -113,22 +100,14 @@ def gold_data():
         for c in m5_resp.get("values", [])[:5]:
             o, cl = float(c["open"]), float(c["close"])
             candle_summary.append({
-                "time": c["datetime"],
-                "open": o,
-                "high": float(c["high"]),
-                "low": float(c["low"]),
-                "close": cl,
-                "color": "GREEN" if cl > o else "RED",
-                "body": round(abs(cl - o), 2)
+                "time": c["datetime"], "open": o, "high": float(c["high"]),
+                "low": float(c["low"]), "close": cl,
+                "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 2)
             })
 
         return {
-            "status": "ok",
-            "symbol": "XAU/USD",
-            "current_price": current,
-            "ema9_m5": ema9,
-            "ema21_m5": ema21,
-            "trend": trend,
+            "status": "ok", "symbol": "XAU/USD", "current_price": current,
+            "ema9_m5": ema9, "ema21_m5": ema21, "trend": trend,
             "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
             "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
             "last_5_m5_candles": candle_summary,
@@ -148,12 +127,10 @@ def gbpusd_data():
         m5_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "GBP/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
-            if len(values) < period:
-                return None
+            if len(values) < period: return None
             k = 2 / (period + 1)
             ema = sum(values[:period]) / period
-            for v in values[period:]:
-                ema = v * k + ema * (1 - k)
+            for v in values[period:]: ema = v * k + ema * (1 - k)
             return round(ema, 6)
 
         m5_closes = [float(c["close"]) for c in m5_resp.get("values", [])]
@@ -193,12 +170,10 @@ def btcusd_data():
         m1_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "BTC/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
-            if len(values) < period:
-                return None
+            if len(values) < period: return None
             k = 2 / (period + 1)
             ema = sum(values[:period]) / period
-            for v in values[period:]:
-                ema = v * k + ema * (1 - k)
+            for v in values[period:]: ema = v * k + ema * (1 - k)
             return round(ema, 2)
 
         m5_closes = [float(c["close"]) for c in m5_resp.get("values", [])]
@@ -239,12 +214,10 @@ def ethusd_data():
         m1_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "ETH/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
-            if len(values) < period:
-                return None
+            if len(values) < period: return None
             k = 2 / (period + 1)
             ema = sum(values[:period]) / period
-            for v in values[period:]:
-                ema = v * k + ema * (1 - k)
+            for v in values[period:]: ema = v * k + ema * (1 - k)
             return round(ema, 4)
 
         m5_closes = [float(c["close"]) for c in m5_resp.get("values", [])]
@@ -292,10 +265,7 @@ def goldprice():
     try:
         resp = req.get(
             "https://www.goldapi.io/api/XAU/USD",
-            headers={
-                "x-access-token": "goldapi-2b3ee317d47f336fa5b15d006845d474-io",
-                "Content-Type": "application/json"
-            },
+            headers={"x-access-token": "goldapi-2b3ee317d47f336fa5b15d006845d474-io", "Content-Type": "application/json"},
             timeout=10
         ).json()
         result = {
@@ -317,10 +287,6 @@ def goldprice():
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
-def run_health_server():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
 def run_pair_scan(pair):
     cfg = get_pair_config(pair)
     _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
@@ -337,37 +303,25 @@ def run_pair_scan(pair):
         entry_c = get_candles(pair, ENTRY_INTERVAL, 200)
         dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
         if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
-            msg = (f"Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
-                   f"1H={len(h1_c)} Entry={len(entry_c)})")
+            msg = f"Not enough HTF data"
             print(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
         if not entry_c:
-            msg = "No entry timeframe data"
-            print(f"{pair}: {msg}")
-            _bot_status["last_scan_result"] = msg
+            _bot_status["last_scan_result"] = "No entry timeframe data"
             return None
+
         polygon_price_data = get_current_price(pair, ENTRY_INTERVAL)
         bot_price = polygon_price_data["price"] if polygon_price_data else entry_c[-1]["close"]
-        print(f"\n{'='*70}")
-        print(f"[PRICE RECONCILIATION] {pair}")
-        print(f" Polygon (bot) latest close : {bot_price}")
-        print(f" Entry candles last close : {entry_c[-1]['close']}")
-        print(f" Discrepancy : {abs(bot_price - entry_c[-1]['close']):.5f}")
-        print(f"{'='*70}\n")
         price = bot_price
-        discrepancy = abs(bot_price - entry_c[-1]['close'])
-        if pair == "XAU/USD" and discrepancy > 0.50:
-            print(f"⚠️ LARGE PRICE DISCREPANCY on XAU/USD ({discrepancy:.2f})")
-        elif discrepancy > 0.0005:
-            print(f"⚠️ Price discrepancy detected on {pair} ({discrepancy:.5f})")
+
         fvgs = detect_fvgs(entry_c, 80)
         ifvgs = detect_ifvgs(fvgs, price)
         atr_value = atr(entry_c, 14) or 0.0010
         candle_quality_buy = candle_quality(entry_c[-1], "BUY")
         candle_quality_sell = candle_quality(entry_c[-1], "SELL")
         spike, vol_ratio = volume_spike(entry_c)
-        print(f"{datetime.now()} | {pair} | Price={price} | DXY fallback={dxy_fallback}")
+
         signal = build_signal_v3(
             pair=pair, price=price,
             daily_candles=daily_c, h4_candles=h4_c, h1_candles=h1_c, entry_candles=entry_c,
@@ -389,19 +343,15 @@ def run_pair_scan(pair):
 
 def get_broker_price(pair):
     if not MT5_AVAILABLE:
-        print(f"[BROKER] MetaTrader5 not available for {pair}")
         return None
     if not mt5.initialize():
-        print(f"[MT5] Failed to initialize for {pair}")
         return None
     symbol = pair.replace("/", "")
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
-        print(f"[MT5] Failed to get tick for {symbol}")
         mt5.shutdown()
         return None
     price = tick.bid
-    print(f"[MT5] Broker price for {pair}: {price}")
     mt5.shutdown()
     return price
 
@@ -410,27 +360,17 @@ def confirm_broker_price_before_alert(signal):
     bot_entry = signal["entry"]
     broker_price = get_broker_price(pair)
     if broker_price is None:
-        print(f"⚠️ Broker price unavailable for {pair} → Sending alert anyway")
         return True
     discrepancy = abs(bot_entry - broker_price)
-    print(f"[BROKER CONFIRM] {pair} | Bot: {bot_entry} | Broker: {broker_price} | Diff: {discrepancy:.5f}")
     if pair == "XAU/USD" and discrepancy > 1.00 or discrepancy > 0.0010:
-        print(f"❌ DISCREPANCY on {pair} → ALERT SKIPPED")
         return False
     return True
 
 def run_bot_loop():
     try:
-        send_telegram(
-            "🤖 <b>Forex Bot V3 — ICT Confluence ONLINE</b>\n\n"
-            "Engine:\n"
-            "HTF Structure (BOS/MSS) → Liquidity Sweep → PD Array (OB/FVG) → DXY Correlation\n\n"
-            f"Pairs: {', '.join(PAIRS)}\n"
-            "Mode: Paper alerts only\n"
-            f"Scan: Every {SCAN_SECONDS // 60} minutes"
-        )
-    except Exception as e:
-        print(f"Startup Telegram message failed (non-fatal): {e}")
+        send_telegram("🤖 Forex Bot V3 + MCP ONLINE")
+    except Exception:
+        pass
     last_signal_time = {}
     last_signal_side = {}
     while True:
@@ -448,22 +388,17 @@ def run_bot_loop():
                             send_signal_v3(signal)
                             last_signal_time[pair] = now
                             last_signal_side[pair] = signal["side"]
-                            print(f"{pair}: ✅ Signal SENT — {signal['side']} @ {signal['entry']}")
-                        else:
-                            print(f"{pair}: ❌ Signal SKIPPED (broker price mismatch)")
-                    else:
-                        print(f"{pair}: Signal skipped due to cooldown.")
-                else:
-                    print(f"{pair}: No signal this cycle.")
                 time.sleep(PAIR_DELAY_SECONDS)
             except Exception as e:
                 print(f"{pair}: Error: {e}")
         time.sleep(SCAN_SECONDS)
 
 if __name__ == "__main__":
-    # Start the trading bot loop in background
+    # Start trading bot in background
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
 
-    # Start MCP server (this is what Claude connects to)
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    # Correct way for current FastMCP version
+    mcp.settings.host = "0.0.0.0"
+    mcp.settings.port = int(os.environ.get("PORT", 10000))
+    mcp.run(transport="streamable-http")
