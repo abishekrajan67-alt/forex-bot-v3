@@ -381,10 +381,25 @@ def ethusd_data():
         return {"status": "error", "message": str(e)}, 500
 
 
+_goldprice_cache = {"data": None, "fetched_at": 0}
+GOLDPRICE_CACHE_TTL = 300  # 5 minutes — saves API calls
+
 @app.route("/goldprice", methods=["GET"])
 def goldprice():
-    """Live XAU/USD spot price from GoldAPI.io — real precious metals feed"""
+    """Live XAU/USD spot price from GoldAPI.io — cached 5 mins to preserve 100/month limit"""
     import requests as req
+    import time
+
+    now = time.time()
+    cached = _goldprice_cache["data"]
+    age = now - _goldprice_cache["fetched_at"]
+
+    # Return cached data if fresh
+    if cached and age < GOLDPRICE_CACHE_TTL:
+        cached["cached"] = True
+        cached["cache_age_seconds"] = int(age)
+        return cached
+
     try:
         resp = req.get(
             "https://www.goldapi.io/api/XAU/USD",
@@ -394,7 +409,8 @@ def goldprice():
             },
             timeout=10
         ).json()
-        return {
+
+        result = {
             "status": "ok",
             "price": resp.get("price"),
             "open": resp.get("open_price"),
@@ -403,8 +419,15 @@ def goldprice():
             "change": resp.get("ch"),
             "change_pct": resp.get("chp"),
             "timestamp": resp.get("timestamp"),
+            "cached": False,
+            "cache_age_seconds": 0,
             "source": "GoldAPI.io — real XAU/USD spot"
         }
+
+        _goldprice_cache["data"] = result
+        _goldprice_cache["fetched_at"] = now
+        return result
+
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
