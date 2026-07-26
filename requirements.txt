@@ -2,3 +2,5 @@ python-dotenv
 requests
 flask
 gunicorn
+mcp
+httpx
