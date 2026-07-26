@@ -8,6 +8,7 @@ Enhanced version with:
 
 import os
 import time
+import sys
 import requests
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
@@ -24,6 +25,9 @@ _CACHE_TTL_SECONDS = 55
 _CALL_TIMESTAMPS = []
 _MAX_CALLS_PER_MINUTE = 5
 
+def log(msg):
+    """Print to stderr to avoid closed stdout issues"""
+    print(msg, file=sys.stderr, flush=True)
 
 def to_polygon_symbol(pair, is_index=False):
     if is_index:
@@ -49,7 +53,7 @@ def _wait_for_rate_limit():
         oldest = _CALL_TIMESTAMPS[0]
         sleep_time = 60 - (now - oldest) + 0.5
         if sleep_time > 0:
-            print(f"[throttle] Rate limit reached, sleeping {round(sleep_time, 1)}s")
+            log(f"[throttle] Rate limit reached, sleeping {round(sleep_time, 1)}s")
             time.sleep(sleep_time)
     _CALL_TIMESTAMPS.append(time.time())
 
@@ -57,7 +61,7 @@ def _wait_for_rate_limit():
 def get_candles(pair, interval, outputsize=120, is_index=False):
     """Original function - unchanged behavior"""
     if interval not in INTERVAL_MAP:
-        print(f"Unsupported interval: {interval}")
+        log(f"Unsupported interval: {interval}")
         return []
 
     multiplier, timespan = INTERVAL_MAP[interval]
@@ -94,7 +98,7 @@ def get_candles(pair, interval, outputsize=120, is_index=False):
         data = resp.json()
 
         if data.get("status") not in ("OK", "DELAYED") or "results" not in data:
-            print(f"{pair} {interval} Polygon error: {data}")
+            log(f"{pair} {interval} Polygon error: {data}")
             return []
 
         candles = []
@@ -114,7 +118,7 @@ def get_candles(pair, interval, outputsize=120, is_index=False):
         return candles
 
     except Exception as e:
-        print(f"{pair} {interval} candle fetch error: {e}")
+        log(f"{pair} {interval} candle fetch error: {e}")
         return []
 
 
@@ -123,7 +127,7 @@ def get_dxy_candles(interval, outputsize=120):
     if candles:
         return candles, False
 
-    print("[get_dxy_candles] DXY unavailable, falling back to inverted EUR/USD proxy")
+    log("[get_dxy_candles] DXY unavailable, falling back to inverted EUR/USD proxy")
     eurusd = get_candles("EUR/USD", interval, outputsize)
     if not eurusd:
         return [], True
@@ -152,7 +156,7 @@ def get_current_price(pair, interval="5min"):
     """
     candles = get_candles(pair, interval, outputsize=5)
     if not candles:
-        print(f"[PRICE CHECK] Failed to get current price for {pair}")
+        log(f"[PRICE CHECK] Failed to get current price for {pair}")
         return None
 
     latest = candles[-1]
@@ -165,7 +169,7 @@ def get_current_price(pair, interval="5min"):
     else:
         atr_approx = 0.0
 
-    print(f"[PRICE CHECK] Polygon {pair} latest close: {price} | Approx recent range: {atr_approx:.4f} | {latest['time']}")
+    log(f"[PRICE CHECK] Polygon {pair} latest close: {price} | Approx recent range: {atr_approx:.4f} | {latest['time']}")
 
     return {
         "price": price,
@@ -177,9 +181,9 @@ def get_current_price(pair, interval="5min"):
 
 if __name__ == "__main__":
     if not POLYGON_API_KEY:
-        print("WARNING: POLYGON_API_KEY not set in .env")
+        log("WARNING: POLYGON_API_KEY not set in .env")
 
-    print("Testing get_current_price for XAU/USD...")
+    log("Testing get_current_price for XAU/USD...")
     result = get_current_price("XAU/USD")
     if result:
-        print(f"  Current price: {result['price']}")
+        log(f"  Current price: {result['price']}")
