@@ -424,6 +424,111 @@ def run_bot_loop():
                 log(f"{pair}: Error: {e}")
         time.sleep(SCAN_SECONDS)
 
+
+def run_telegram_commands():
+    """
+    Poll Telegram for commands and respond:
+    /gold  — fetch live XAU/USD price + EMA + candles
+    /help  — list available commands
+    """
+    import requests as req
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not token or not chat_id:
+        log("Telegram command polling: missing credentials, skipping.")
+        return
+
+    last_update_id = None
+    log("✅ Telegram command polling started")
+
+    while True:
+        try:
+            params = {"timeout": 30, "allowed_updates": ["message"]}
+            if last_update_id:
+                params["offset"] = last_update_id + 1
+
+            resp = req.get(
+                f"https://api.telegram.org/bot{token}/getUpdates",
+                params=params,
+                timeout=35
+            ).json()
+
+            for update in resp.get("result", []):
+                last_update_id = update["update_id"]
+                msg = update.get("message", {})
+                text = msg.get("text", "").strip().lower()
+                user_chat_id = str(msg.get("chat", {}).get("id", ""))
+
+                if not text.startswith("/"):
+                    continue
+
+                # /help command
+                if text == "/help":
+                    send_telegram(
+                        "🤖 <b>Forex Bot Commands</b>\n\n"
+                        "/gold — Live XAU/USD price + EMA + analysis\n"
+                        "/help — Show this message"
+                    )
+
+                # /gold command
+                elif text == "/gold":
+                    try:
+                        # Fetch goldprice
+                        gp = req.get(
+                            "https://forex-bot-v3-gold.onrender.com/goldprice",
+                            timeout=10
+                        ).json()
+
+                        # Fetch gold candles + EMA
+                        gc = req.get(
+                            "https://forex-bot-v3-gold.onrender.com/gold",
+                            timeout=10
+                        ).json()
+
+                        price    = gp.get("price", "N/A")
+                        high     = gp.get("high", "N/A")
+                        low      = gp.get("low", "N/A")
+                        change   = gp.get("change", 0)
+                        chg_pct  = gp.get("change_pct", 0)
+                        ema9     = gc.get("ema9_m5", "N/A")
+                        trend    = gc.get("trend", "N/A")
+                        p_vs_e9  = gc.get("price_vs_ema9", "N/A")
+
+                        # Last 3 candles summary
+                        candles  = gc.get("last_5_m5_candles", [])[:3]
+                        c_lines  = ""
+                        for c in candles:
+                            arrow = "🟢" if c["color"] == "GREEN" else "🔴"
+                            c_lines += f"{arrow} {c['time'][11:16]} C={c['close']:.2f} body={c['body']:.2f}\n"
+
+                        bias_emoji = "🟢" if trend == "BULLISH" else "🔴" if trend == "BEARISH" else "🟡"
+
+                        message = (
+                            f"<b>📊 XAU/USD LIVE</b>\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"💰 Price: <b>{price}</b>\n"
+                            f"📈 High: {high}  📉 Low: {low}\n"
+                            f"📊 Change: {change:+.2f} ({chg_pct:+.2f}%)\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"{bias_emoji} Bias: <b>{trend}</b>\n"
+                            f"EMA9: {ema9} | Price {p_vs_e9} EMA9\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"<b>Last 3 M5 Candles:</b>\n"
+                            f"{c_lines}"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"<i>Paste this to Claude for full analysis</i>"
+                        )
+                        send_telegram(message)
+
+                    except Exception as e:
+                        send_telegram(f"❌ /gold error: {str(e)}")
+
+        except Exception as e:
+            log(f"Telegram polling error: {e}")
+            time.sleep(5)
+
 # ========== MAIN ENTRY POINT ==========
 
 if __name__ == "__main__":
@@ -433,6 +538,11 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
     log("✅ Trading bot started in background")
+
+    # Start Telegram command polling
+    tg_thread = threading.Thread(target=run_telegram_commands, daemon=True)
+    tg_thread.start()
+    log("✅ Telegram command polling started (/gold /help)")
     
     # Start MCP server on port 10001 (different from Flask)
     def run_mcp():
