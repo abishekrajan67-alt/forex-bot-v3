@@ -430,21 +430,26 @@ if __name__ == "__main__":
     bot_thread.start()
     print("✅ Trading bot started in background")
     
-    # Start MCP server in background thread
-    def start_mcp():
-        print("🔄 Starting MCP server...")
-        try:
-            mcp.settings.host = "0.0.0.0"
-            mcp.settings.port = int(os.environ.get("PORT", 10000))
-        except AttributeError:
-            mcp.host = "0.0.0.0"
-            mcp.port = int(os.environ.get("PORT", 10000))
-        mcp.run()
+    # Mount Flask app as middleware on MCP
+    # This makes both MCP and Flask routes available
+    try:
+        from mcp.server.fastmcp.middleware import FlaskMiddleware
+        mcp.add_middleware(FlaskMiddleware(app))
+        print("✅ Flask routes mounted on MCP")
+    except (ImportError, AttributeError) as e:
+        print(f"⚠️ Could not mount Flask middleware: {e}")
+        print("⚠️ Flask routes will be available separately")
     
-    mcp_thread = threading.Thread(target=start_mcp, daemon=True)
-    mcp_thread.start()
-    print("✅ MCP server started in background")
+    # Set host and port
+    try:
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = int(os.environ.get("PORT", 10000))
+    except AttributeError:
+        mcp.host = "0.0.0.0"
+        mcp.port = int(os.environ.get("PORT", 10000))
     
-    # Run Flask app (this keeps the process alive)
-    print(f"🌐 Starting Flask server on port {os.environ.get('PORT', 10000)}...")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)), threaded=True)
+    # Run MCP server (which now includes Flask routes)
+    print(f"🌐 Starting server on port {os.environ.get('PORT', 10000)}...")
+    print("📡 MCP endpoint: /mcp")
+    print("🌐 Flask endpoints: /, /gold, /goldprice, etc.")
+    mcp.run()
