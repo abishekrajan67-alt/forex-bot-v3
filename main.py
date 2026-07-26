@@ -1,5 +1,5 @@
 """
-MAIN.PY - FOREX BOT V3 (Clean Final Version)
+MAIN.PY - FOREX BOT V3 (Clean Final Version) + MCP
 """
 
 import os
@@ -25,12 +25,31 @@ from legacy_helpers import (
 from signal_engine import build_signal_v3
 from telegram_alerts import send_telegram, send_signal_v3
 
+# ========== MCP ==========
+from mcp.server.fastmcp import FastMCP
+import httpx
+
+mcp = FastMCP("Forex Bot", stateless_http=True, json_response=True)
+
+@mcp.tool()
+async def get_gold_price() -> dict:
+    """Get current XAU/USD spot price"""
+    async with httpx.AsyncClient() as client:
+        r = await client.get("https://forex-bot-v3-gold.onrender.com/goldprice")
+        return r.json()
+
+@mcp.tool()
+async def get_gold_data() -> dict:
+    """Get full gold data (price + EMA + candles)"""
+    async with httpx.AsyncClient() as client:
+        r = await client.get("https://forex-bot-v3-gold.onrender.com/gold")
+        return r.json()
+# ========================
 
 ENTRY_INTERVAL = "5min"
 HTF_DAILY = "1day"
 HTF_4H = "4h"
 HTF_1H = "1h"
-
 
 app = Flask(__name__)
 
@@ -40,7 +59,6 @@ _bot_status = {
     "last_scan_pair": None,
     "last_scan_result": None,
 }
-
 
 @app.route("/")
 def health():
@@ -53,47 +71,28 @@ def health():
         "last_scan_result": _bot_status["last_scan_result"],
     }
 
-
 @app.route("/gold", methods=["GET"])
 def gold_data():
     """Live XAU/USD data endpoint for Claude trading analysis"""
     import requests as req
-
     API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
-
     try:
-        # Current price
         price_resp = req.get(
             "https://api.twelvedata.com/price",
             params={"symbol": "XAU/USD", "apikey": API_KEY},
             timeout=10
         ).json()
-
-        # M5 candles (last 20)
         m5_resp = req.get(
             "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "XAU/USD",
-                "interval": "5min",
-                "outputsize": 20,
-                "apikey": API_KEY
-            },
+            params={"symbol": "XAU/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY},
             timeout=10
         ).json()
-
-        # M1 candles (last 15)
         m1_resp = req.get(
             "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "XAU/USD",
-                "interval": "1min",
-                "outputsize": 15,
-                "apikey": API_KEY
-            },
+            params={"symbol": "XAU/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY},
             timeout=10
         ).json()
 
-        # EMA calculation
         def calc_ema(values, period):
             if len(values) < period:
                 return None
@@ -107,11 +106,9 @@ def gold_data():
         m5_closes_asc = list(reversed(m5_closes))
         ema9 = calc_ema(m5_closes_asc, 9)
         ema21 = calc_ema(m5_closes_asc, 21)
-
         current = float(price_resp.get("price", 0))
         trend = "BULLISH" if current > ema9 else "BEARISH" if ema9 else "UNKNOWN"
 
-        # Last 5 candle summary
         candle_summary = []
         for c in m5_resp.get("values", [])[:5]:
             o, cl = float(c["open"]), float(c["close"])
@@ -138,36 +135,17 @@ def gold_data():
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-
     except Exception as e:
         import traceback
         return {"status": "error", "message": str(e), "trace": traceback.format_exc()}, 500
 
-
 @app.route("/gbpusd", methods=["GET"])
 def gbpusd_data():
-    """Live GBP/USD data endpoint for Claude trading analysis"""
     import requests as req
-
     API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
-
     try:
-        price_resp = req.get(
-            "https://api.twelvedata.com/price",
-            params={"symbol": "GBP/USD", "apikey": API_KEY},
-            timeout=10
-        ).json()
-
-        m5_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "GBP/USD",
-                "interval": "5min",
-                "outputsize": 20,
-                "apikey": API_KEY
-            },
-            timeout=10
-        ).json()
+        price_resp = req.get("https://api.twelvedata.com/price", params={"symbol": "GBP/USD", "apikey": API_KEY}, timeout=10).json()
+        m5_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "GBP/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
             if len(values) < period:
@@ -182,74 +160,37 @@ def gbpusd_data():
         m5_closes_asc = list(reversed(m5_closes))
         ema9 = calc_ema(m5_closes_asc, 9)
         ema21 = calc_ema(m5_closes_asc, 21)
-
         current = float(price_resp.get("price", 0))
 
         candle_summary = []
         for c in m5_resp.get("values", [])[:5]:
             o, cl = float(c["open"]), float(c["close"])
             candle_summary.append({
-                "time": c["datetime"],
-                "open": o,
-                "high": float(c["high"]),
-                "low": float(c["low"]),
-                "close": cl,
-                "color": "GREEN" if cl > o else "RED",
-                "body": round(abs(cl - o), 5)
+                "time": c["datetime"], "open": o, "high": float(c["high"]),
+                "low": float(c["low"]), "close": cl,
+                "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 5)
             })
 
         return {
-            "status": "ok",
-            "symbol": "GBP/USD",
-            "current_price": current,
-            "ema9_m5": ema9,
-            "ema21_m5": ema21,
+            "status": "ok", "symbol": "GBP/USD", "current_price": current,
+            "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
             "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
             "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
             "last_5_m5_candles": candle_summary,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
-
 @app.route("/btcusd", methods=["GET"])
 def btcusd_data():
-    """Live BTC/USD data endpoint for Claude trading analysis"""
     import requests as req
-
     API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
-
     try:
-        price_resp = req.get(
-            "https://api.twelvedata.com/price",
-            params={"symbol": "BTC/USD", "apikey": API_KEY},
-            timeout=10
-        ).json()
-
-        m5_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "BTC/USD",
-                "interval": "5min",
-                "outputsize": 20,
-                "apikey": API_KEY
-            },
-            timeout=10
-        ).json()
-
-        m1_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "BTC/USD",
-                "interval": "1min",
-                "outputsize": 15,
-                "apikey": API_KEY
-            },
-            timeout=10
-        ).json()
+        price_resp = req.get("https://api.twelvedata.com/price", params={"symbol": "BTC/USD", "apikey": API_KEY}, timeout=10).json()
+        m5_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "BTC/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY}, timeout=10).json()
+        m1_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "BTC/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
             if len(values) < period:
@@ -264,28 +205,20 @@ def btcusd_data():
         m5_closes_asc = list(reversed(m5_closes))
         ema9 = calc_ema(m5_closes_asc, 9)
         ema21 = calc_ema(m5_closes_asc, 21)
-
         current = float(price_resp.get("price", 0))
 
         candle_summary = []
         for c in m5_resp.get("values", [])[:5]:
             o, cl = float(c["open"]), float(c["close"])
             candle_summary.append({
-                "time": c["datetime"],
-                "open": o,
-                "high": float(c["high"]),
-                "low": float(c["low"]),
-                "close": cl,
-                "color": "GREEN" if cl > o else "RED",
-                "body": round(abs(cl - o), 2)
+                "time": c["datetime"], "open": o, "high": float(c["high"]),
+                "low": float(c["low"]), "close": cl,
+                "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 2)
             })
 
         return {
-            "status": "ok",
-            "symbol": "BTC/USD",
-            "current_price": current,
-            "ema9_m5": ema9,
-            "ema21_m5": ema21,
+            "status": "ok", "symbol": "BTC/USD", "current_price": current,
+            "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
             "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
             "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
@@ -293,46 +226,17 @@ def btcusd_data():
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
-
 @app.route("/ethusd", methods=["GET"])
 def ethusd_data():
-    """Live ETH/USD data endpoint for Claude trading analysis"""
     import requests as req
-
     API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "e5cd38de963a425bafe8d1af56dea121")
-
     try:
-        price_resp = req.get(
-            "https://api.twelvedata.com/price",
-            params={"symbol": "ETH/USD", "apikey": API_KEY},
-            timeout=10
-        ).json()
-
-        m5_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "ETH/USD",
-                "interval": "5min",
-                "outputsize": 20,
-                "apikey": API_KEY
-            },
-            timeout=10
-        ).json()
-
-        m1_resp = req.get(
-            "https://api.twelvedata.com/time_series",
-            params={
-                "symbol": "ETH/USD",
-                "interval": "1min",
-                "outputsize": 15,
-                "apikey": API_KEY
-            },
-            timeout=10
-        ).json()
+        price_resp = req.get("https://api.twelvedata.com/price", params={"symbol": "ETH/USD", "apikey": API_KEY}, timeout=10).json()
+        m5_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "ETH/USD", "interval": "5min", "outputsize": 20, "apikey": API_KEY}, timeout=10).json()
+        m1_resp = req.get("https://api.twelvedata.com/time_series", params={"symbol": "ETH/USD", "interval": "1min", "outputsize": 15, "apikey": API_KEY}, timeout=10).json()
 
         def calc_ema(values, period):
             if len(values) < period:
@@ -347,28 +251,20 @@ def ethusd_data():
         m5_closes_asc = list(reversed(m5_closes))
         ema9 = calc_ema(m5_closes_asc, 9)
         ema21 = calc_ema(m5_closes_asc, 21)
-
         current = float(price_resp.get("price", 0))
 
         candle_summary = []
         for c in m5_resp.get("values", [])[:5]:
             o, cl = float(c["open"]), float(c["close"])
             candle_summary.append({
-                "time": c["datetime"],
-                "open": o,
-                "high": float(c["high"]),
-                "low": float(c["low"]),
-                "close": cl,
-                "color": "GREEN" if cl > o else "RED",
-                "body": round(abs(cl - o), 4)
+                "time": c["datetime"], "open": o, "high": float(c["high"]),
+                "low": float(c["low"]), "close": cl,
+                "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 4)
             })
 
         return {
-            "status": "ok",
-            "symbol": "ETH/USD",
-            "current_price": current,
-            "ema9_m5": ema9,
-            "ema21_m5": ema21,
+            "status": "ok", "symbol": "ETH/USD", "current_price": current,
+            "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
             "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
             "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
@@ -376,30 +272,23 @@ def ethusd_data():
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
-
 _goldprice_cache = {"data": None, "fetched_at": 0}
-GOLDPRICE_CACHE_TTL = 300  # 5 minutes — saves API calls
+GOLDPRICE_CACHE_TTL = 300
 
 @app.route("/goldprice", methods=["GET"])
 def goldprice():
-    """Live XAU/USD spot price from GoldAPI.io — cached 5 mins to preserve 100/month limit"""
     import requests as req
     import time
-
     now = time.time()
     cached = _goldprice_cache["data"]
     age = now - _goldprice_cache["fetched_at"]
-
-    # Return cached data if fresh
     if cached and age < GOLDPRICE_CACHE_TTL:
         cached["cached"] = True
         cached["cache_age_seconds"] = int(age)
         return cached
-
     try:
         resp = req.get(
             "https://www.goldapi.io/api/XAU/USD",
@@ -409,7 +298,6 @@ def goldprice():
             },
             timeout=10
         ).json()
-
         result = {
             "status": "ok",
             "price": resp.get("price"),
@@ -423,111 +311,81 @@ def goldprice():
             "cache_age_seconds": 0,
             "source": "GoldAPI.io — real XAU/USD spot"
         }
-
         _goldprice_cache["data"] = result
         _goldprice_cache["fetched_at"] = now
         return result
-
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
-
 
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-
 def run_pair_scan(pair):
     cfg = get_pair_config(pair)
     _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
     _bot_status["last_scan_pair"] = pair
-
     try:
         if not execution_session_ok():
             msg = f"Outside London/New York execution window (session={current_session()})"
             print(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
-
         daily_c = get_candles(pair, HTF_DAILY, 60)
         h4_c = get_candles(pair, HTF_4H, 120)
         h1_c = get_candles(pair, HTF_1H, 160)
         entry_c = get_candles(pair, ENTRY_INTERVAL, 200)
         dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
-
         if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
             msg = (f"Not enough HTF data (Daily={len(daily_c)} 4H={len(h4_c)} "
                    f"1H={len(h1_c)} Entry={len(entry_c)})")
             print(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
-
         if not entry_c:
             msg = "No entry timeframe data"
             print(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
-
-        # PRICE RECONCILIATION
         polygon_price_data = get_current_price(pair, ENTRY_INTERVAL)
         bot_price = polygon_price_data["price"] if polygon_price_data else entry_c[-1]["close"]
-
         print(f"\n{'='*70}")
         print(f"[PRICE RECONCILIATION] {pair}")
-        print(f"  Polygon (bot) latest close : {bot_price}")
-        print(f"  Entry candles last close   : {entry_c[-1]['close']}")
-        print(f"  Discrepancy                : {abs(bot_price - entry_c[-1]['close']):.5f}")
+        print(f" Polygon (bot) latest close : {bot_price}")
+        print(f" Entry candles last close : {entry_c[-1]['close']}")
+        print(f" Discrepancy : {abs(bot_price - entry_c[-1]['close']):.5f}")
         print(f"{'='*70}\n")
-
         price = bot_price
-
         discrepancy = abs(bot_price - entry_c[-1]['close'])
         if pair == "XAU/USD" and discrepancy > 0.50:
             print(f"⚠️ LARGE PRICE DISCREPANCY on XAU/USD ({discrepancy:.2f})")
         elif discrepancy > 0.0005:
             print(f"⚠️ Price discrepancy detected on {pair} ({discrepancy:.5f})")
-
         fvgs = detect_fvgs(entry_c, 80)
         ifvgs = detect_ifvgs(fvgs, price)
-
         atr_value = atr(entry_c, 14) or 0.0010
         candle_quality_buy = candle_quality(entry_c[-1], "BUY")
         candle_quality_sell = candle_quality(entry_c[-1], "SELL")
         spike, vol_ratio = volume_spike(entry_c)
-
         print(f"{datetime.now()} | {pair} | Price={price} | DXY fallback={dxy_fallback}")
-
         signal = build_signal_v3(
-            pair=pair,
-            price=price,
-            daily_candles=daily_c,
-            h4_candles=h4_c,
-            h1_candles=h1_c,
-            entry_candles=entry_c,
-            dxy_candles=dxy_c,
-            fvgs=fvgs,
-            ifvgs=ifvgs,
-            atr_value=atr_value,
-            candle_quality_buy=candle_quality_buy,
-            candle_quality_sell=candle_quality_sell,
-            volume_spike_result=(spike, vol_ratio),
-            pair_config=cfg,
+            pair=pair, price=price,
+            daily_candles=daily_c, h4_candles=h4_c, h1_candles=h1_c, entry_candles=entry_c,
+            dxy_candles=dxy_c, fvgs=fvgs, ifvgs=ifvgs, atr_value=atr_value,
+            candle_quality_buy=candle_quality_buy, candle_quality_sell=candle_quality_sell,
+            volume_spike_result=(spike, vol_ratio), pair_config=cfg,
         )
-
         _bot_status["last_scan_result"] = (
             f"Signal: {signal['side']} @ {signal['entry']} ({signal['confidence']}%)"
             if signal else "No signal this cycle"
         )
-
         return signal
-
     except Exception as e:
         import traceback
         print(f"{pair}: ERROR: {str(e)}")
         print(traceback.format_exc())
         _bot_status["last_scan_result"] = f"ERROR: {str(e)}"
         return None
-
 
 def get_broker_price(pair):
     if not MT5_AVAILABLE:
@@ -547,7 +405,6 @@ def get_broker_price(pair):
     mt5.shutdown()
     return price
 
-
 def confirm_broker_price_before_alert(signal):
     pair = signal["pair"]
     bot_entry = signal["entry"]
@@ -562,7 +419,6 @@ def confirm_broker_price_before_alert(signal):
         return False
     return True
 
-
 def run_bot_loop():
     try:
         send_telegram(
@@ -575,10 +431,8 @@ def run_bot_loop():
         )
     except Exception as e:
         print(f"Startup Telegram message failed (non-fatal): {e}")
-
     last_signal_time = {}
     last_signal_side = {}
-
     while True:
         for pair in PAIRS:
             try:
@@ -606,14 +460,10 @@ def run_bot_loop():
                 print(f"{pair}: Error: {e}")
         time.sleep(SCAN_SECONDS)
 
-
-def main():
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
-    run_bot_loop()
-
-
 if __name__ == "__main__":
-    from telegram_alerts import send_telegram
-    send_telegram("🧪 Bot started with Broker Price Confirmation")
-    main()
+    # Start the trading bot loop in background
+    bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
+    bot_thread.start()
+
+    # Start MCP server (this is what Claude connects to)
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
