@@ -430,16 +430,21 @@ if __name__ == "__main__":
     bot_thread.start()
     print("✅ Trading bot started in background")
     
-    # Set host and port for MCP
-    try:
-        mcp.settings.host = "0.0.0.0"
-        mcp.settings.port = int(os.environ.get("PORT", 10000))
-        print(f"📡 MCP server configured on port {os.environ.get('PORT', 10000)}")
-    except AttributeError:
-        mcp.host = "0.0.0.0"
-        mcp.port = int(os.environ.get("PORT", 10000))
-        print(f"📡 MCP server configured (fallback) on port {os.environ.get('PORT', 10000)}")
+    # Start MCP server in background thread
+    def start_mcp():
+        print("🔄 Starting MCP server...")
+        try:
+            mcp.settings.host = "0.0.0.0"
+            mcp.settings.port = int(os.environ.get("PORT", 10000))
+        except AttributeError:
+            mcp.host = "0.0.0.0"
+            mcp.port = int(os.environ.get("PORT", 10000))
+        mcp.run()
     
-    # Start MCP server - NO parameters!
-    print("🔄 Starting MCP server...")
-    mcp.run()
+    mcp_thread = threading.Thread(target=start_mcp, daemon=True)
+    mcp_thread.start()
+    print("✅ MCP server started in background")
+    
+    # Run Flask app (this keeps the process alive)
+    print(f"🌐 Starting Flask server on port {os.environ.get('PORT', 10000)}...")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)), threaded=True)
