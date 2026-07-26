@@ -422,8 +422,6 @@ def run_bot_loop():
 
 # ========== MAIN ENTRY POINT ==========
 
-# ========== MAIN ENTRY POINT ==========
-
 if __name__ == "__main__":
     print("🚀 Starting Forex Bot V3 + MCP...")
     
@@ -432,18 +430,16 @@ if __name__ == "__main__":
     bot_thread.start()
     print("✅ Trading bot started in background")
     
-    # --- FIX: Set host and port on the settings object ---
-    # This is the correct way for this version of FastMCP
+    # Set host and port for MCP
     try:
         mcp.settings.host = "0.0.0.0"
         mcp.settings.port = int(os.environ.get("PORT", 10000))
         print(f"📡 MCP server configured on port {os.environ.get('PORT', 10000)}")
     except AttributeError:
-        # Fallback for some versions
         mcp.host = "0.0.0.0"
         mcp.port = int(os.environ.get("PORT", 10000))
         print(f"📡 MCP server configured (fallback) on port {os.environ.get('PORT', 10000)}")
     
-    # Start MCP server - REMOVED transport parameter
+    # Start MCP server - NO parameters!
     print("🔄 Starting MCP server...")
     mcp.run()
