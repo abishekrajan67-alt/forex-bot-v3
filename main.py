@@ -422,6 +422,8 @@ def run_bot_loop():
 
 # ========== MAIN ENTRY POINT ==========
 
+# ========== MAIN ENTRY POINT ==========
+
 if __name__ == "__main__":
     print("🚀 Starting Forex Bot V3 + MCP...")
     
@@ -442,6 +444,6 @@ if __name__ == "__main__":
         mcp.port = int(os.environ.get("PORT", 10000))
         print(f"📡 MCP server configured (fallback) on port {os.environ.get('PORT', 10000)}")
     
-    # Start MCP server (this is what Claude will connect to)
-    print("🔄 Starting MCP server with streamable-http transport...")
-    mcp.run(transport="streamable-http")
+    # Start MCP server - REMOVED transport parameter
+    print("🔄 Starting MCP server...")
+    mcp.run()
