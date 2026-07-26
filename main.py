@@ -5,6 +5,7 @@ MAIN.PY - FOREX BOT V3 + MCP
 import os
 import time
 import threading
+import sys
 from datetime import datetime, timezone
 from flask import Flask, jsonify
 
@@ -314,6 +315,10 @@ def mcp_test():
 
 # ========== BOT FUNCTIONS ==========
 
+def log(msg):
+    """Print to stderr to avoid closed stdout issues"""
+    print(msg, file=sys.stderr, flush=True)
+
 def run_pair_scan(pair):
     cfg = get_pair_config(pair)
     _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
@@ -321,7 +326,7 @@ def run_pair_scan(pair):
     try:
         if not execution_session_ok():
             msg = f"Outside London/New York execution window (session={current_session()})"
-            print(f"{pair}: {msg}")
+            log(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
         daily_c = get_candles(pair, HTF_DAILY, 60)
@@ -331,7 +336,7 @@ def run_pair_scan(pair):
         dxy_c, dxy_fallback = get_dxy_candles(HTF_1H, 120)
         if min(len(daily_c), len(h4_c), len(h1_c), len(entry_c)) < 50:
             msg = f"Not enough HTF data"
-            print(f"{pair}: {msg}")
+            log(f"{pair}: {msg}")
             _bot_status["last_scan_result"] = msg
             return None
         if not entry_c:
@@ -363,10 +368,8 @@ def run_pair_scan(pair):
         return signal
     except Exception as e:
         import traceback
-        # Use sys.stderr to avoid closed stdout issue
-        import sys
-        print(f"{pair}: ERROR: {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        log(f"{pair}: ERROR: {str(e)}")
+        log(traceback.format_exc())
         _bot_status["last_scan_result"] = f"ERROR: {str(e)}"
         return None
 
@@ -419,25 +422,23 @@ def run_bot_loop():
                             last_signal_side[pair] = signal["side"]
                 time.sleep(PAIR_DELAY_SECONDS)
             except Exception as e:
-                import sys
-                print(f"{pair}: Error: {e}", file=sys.stderr)
+                log(f"{pair}: Error: {e}")
         time.sleep(SCAN_SECONDS)
 
 # ========== MAIN ENTRY POINT ==========
 
 if __name__ == "__main__":
-    import sys
-    
-    print("🚀 Starting Forex Bot V3 + MCP...", file=sys.stderr)
+    log("🚀 Starting Forex Bot V3 + MCP...")
     
     # Start trading bot in background
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
-    print("✅ Trading bot started in background", file=sys.stderr)
+    log("✅ Trading bot started in background")
     
-    # Start MCP server in a separate thread
-    def run_mcp_server():
+    # Start MCP server in background thread
+    def run_mcp():
         try:
+            log("🔄 Starting MCP server...")
             # Set host and port
             try:
                 mcp.settings.host = "0.0.0.0"
@@ -445,17 +446,17 @@ if __name__ == "__main__":
             except AttributeError:
                 mcp.host = "0.0.0.0"
                 mcp.port = int(os.environ.get("PORT", 10000))
-            
-            print("🔄 Starting MCP server...", file=sys.stderr)
             mcp.run()
         except Exception as e:
-            print(f"MCP server error: {e}", file=sys.stderr)
+            log(f"MCP ERROR: {e}")
+            import traceback
+            log(traceback.format_exc())
     
-    mcp_thread = threading.Thread(target=run_mcp_server, daemon=True)
+    mcp_thread = threading.Thread(target=run_mcp, daemon=True)
     mcp_thread.start()
-    print("✅ MCP server started in background", file=sys.stderr)
+    log("✅ MCP server started in background")
     
-    # Run Flask app (this keeps the process alive)
+    # Run Flask app
     port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Starting Flask server on port {port}...", file=sys.stderr)
+    log(f"🌐 Starting Flask server on port {port}...")
     app.run(host="0.0.0.0", port=port, threaded=True, debug=False)
