@@ -6,7 +6,7 @@ import os
 import time
 import threading
 from datetime import datetime, timezone
-from flask import Flask
+from flask import Flask, jsonify
 
 # Optional MT5
 try:
@@ -60,16 +60,26 @@ _bot_status = {
     "last_scan_result": None,
 }
 
+# ========== FLASK ROUTES ==========
+
 @app.route("/")
 def health():
-    return {
+    """Root endpoint - returns bot status"""
+    return jsonify({
         "status": "alive",
         "bot": "forex-bot-v3",
         "started_at": _bot_status["started_at"],
         "last_scan_at": _bot_status["last_scan_at"],
         "last_scan_pair": _bot_status["last_scan_pair"],
         "last_scan_result": _bot_status["last_scan_result"],
-    }
+        "mcp_endpoint": "/mcp",
+        "mcp_tools": ["get_gold_price", "get_gold_data"]
+    })
+
+@app.route("/healthz")
+def healthz():
+    """Simple health check for Render"""
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/gold", methods=["GET"])
 def gold_data():
@@ -105,7 +115,7 @@ def gold_data():
                 "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 2)
             })
 
-        return {
+        return jsonify({
             "status": "ok", "symbol": "XAU/USD", "current_price": current,
             "ema9_m5": ema9, "ema21_m5": ema21, "trend": trend,
             "price_vs_ema9": "ABOVE" if current > (ema9 or 0) else "BELOW",
@@ -113,10 +123,10 @@ def gold_data():
             "last_5_m5_candles": candle_summary,
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
     except Exception as e:
         import traceback
-        return {"status": "error", "message": str(e), "trace": traceback.format_exc()}, 500
+        return jsonify({"status": "error", "message": str(e), "trace": traceback.format_exc()}), 500
 
 @app.route("/gbpusd", methods=["GET"])
 def gbpusd_data():
@@ -148,7 +158,7 @@ def gbpusd_data():
                 "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 5)
             })
 
-        return {
+        return jsonify({
             "status": "ok", "symbol": "GBP/USD", "current_price": current,
             "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
@@ -156,9 +166,9 @@ def gbpusd_data():
             "price_vs_ema21": "ABOVE" if current > (ema21 or 0) else "BELOW",
             "last_5_m5_candles": candle_summary,
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/btcusd", methods=["GET"])
 def btcusd_data():
@@ -191,7 +201,7 @@ def btcusd_data():
                 "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 2)
             })
 
-        return {
+        return jsonify({
             "status": "ok", "symbol": "BTC/USD", "current_price": current,
             "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
@@ -200,9 +210,9 @@ def btcusd_data():
             "last_5_m5_candles": candle_summary,
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/ethusd", methods=["GET"])
 def ethusd_data():
@@ -235,7 +245,7 @@ def ethusd_data():
                 "color": "GREEN" if cl > o else "RED", "body": round(abs(cl - o), 4)
             })
 
-        return {
+        return jsonify({
             "status": "ok", "symbol": "ETH/USD", "current_price": current,
             "ema9_m5": ema9, "ema21_m5": ema21,
             "trend": "BULLISH" if current > (ema9 or 0) else "BEARISH",
@@ -244,9 +254,9 @@ def ethusd_data():
             "last_5_m5_candles": candle_summary,
             "m1_candles": m1_resp.get("values", [])[:10],
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 _goldprice_cache = {"data": None, "fetched_at": 0}
 GOLDPRICE_CACHE_TTL = 300
@@ -261,7 +271,7 @@ def goldprice():
     if cached and age < GOLDPRICE_CACHE_TTL:
         cached["cached"] = True
         cached["cache_age_seconds"] = int(age)
-        return cached
+        return jsonify(cached)
     try:
         resp = req.get(
             "https://www.goldapi.io/api/XAU/USD",
@@ -283,14 +293,14 @@ def goldprice():
         }
         _goldprice_cache["data"] = result
         _goldprice_cache["fetched_at"] = now
-        return result
+        return jsonify(result)
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/mcp/test", methods=["GET"])
 def mcp_test():
     """Simple test endpoint for MCP"""
-    return {
+    return jsonify({
         "status": "ok",
         "message": "MCP server is running",
         "tools": [
@@ -300,7 +310,9 @@ def mcp_test():
         "endpoint": "/mcp",
         "transport": "streamable-http",
         "note": "Use Accept: text/event-stream header for SSE connection"
-    }
+    })
+
+# ========== BOT FUNCTIONS ==========
 
 def run_pair_scan(pair):
     cfg = get_pair_config(pair)
@@ -408,11 +420,28 @@ def run_bot_loop():
                 print(f"{pair}: Error: {e}")
         time.sleep(SCAN_SECONDS)
 
+# ========== MAIN ENTRY POINT ==========
+
 if __name__ == "__main__":
+    print("🚀 Starting Forex Bot V3 + MCP...")
+    
     # Start trading bot in background
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
-
+    print("✅ Trading bot started in background")
+    
+    # --- FIX: Set host and port on the settings object ---
+    # This is the correct way for this version of FastMCP
+    try:
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = int(os.environ.get("PORT", 10000))
+        print(f"📡 MCP server configured on port {os.environ.get('PORT', 10000)}")
+    except AttributeError:
+        # Fallback for some versions
+        mcp.host = "0.0.0.0"
+        mcp.port = int(os.environ.get("PORT", 10000))
+        print(f"📡 MCP server configured (fallback) on port {os.environ.get('PORT', 10000)}")
+    
     # Start MCP server (this is what Claude will connect to)
-    # The Flask health server runs on the same port via the MCP server
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    print("🔄 Starting MCP server with streamable-http transport...")
+    mcp.run(transport="streamable-http")
