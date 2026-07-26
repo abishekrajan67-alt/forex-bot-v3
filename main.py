@@ -307,14 +307,36 @@ def mcp_test():
     """Simple test endpoint for MCP"""
     return jsonify({
         "status": "ok",
-        "message": "MCP server is running on port 10001",
+        "message": "MCP tools available",
         "tools": [
             {"name": "get_gold_price", "description": "Get current XAU/USD spot price"},
-            {"name": "get_gold_data", "description": "Get full gold data (price + EMA + candles)"}
+            {"name": "get_gold_data",  "description": "Get full gold data (price + EMA + candles)"}
         ],
-        "mcp_endpoint": "https://forex-bot-v3-gold.onrender.com:10001/mcp",
-        "note": "MCP runs on port 10001, Flask on port 10000"
+        "mcp_endpoint": "https://forex-bot-v3-gold.onrender.com/mcp",
+        "note": "MCP served on same port as Flask"
     })
+
+
+@app.route("/mcp/tools/get_gold_price", methods=["GET", "POST"])
+def mcp_tool_gold_price():
+    """MCP tool: get_gold_price"""
+    import requests as req
+    try:
+        data = req.get("https://forex-bot-v3-gold.onrender.com/goldprice", timeout=10).json()
+        return jsonify({"result": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/mcp/tools/get_gold_data", methods=["GET", "POST"])
+def mcp_tool_gold_data():
+    """MCP tool: get_gold_data"""
+    import requests as req
+    try:
+        data = req.get("https://forex-bot-v3-gold.onrender.com/gold", timeout=10).json()
+        return jsonify({"result": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ========== BOT FUNCTIONS ==========
 
@@ -543,29 +565,8 @@ if __name__ == "__main__":
     tg_thread = threading.Thread(target=run_telegram_commands, daemon=True)
     tg_thread.start()
     log("✅ Telegram command polling started (/gold /help)")
-    
-    # Start MCP server on port 10001 (different from Flask)
-    def run_mcp():
-        try:
-            log("🔄 Starting MCP server on port 10001...")
-            # Set host and port for MCP
-            try:
-                mcp.settings.host = "0.0.0.0"
-                mcp.settings.port = 10001
-            except AttributeError:
-                mcp.host = "0.0.0.0"
-                mcp.port = 10001
-            mcp.run()
-        except Exception as e:
-            log(f"MCP ERROR: {e}")
-            import traceback
-            log(traceback.format_exc())
-    
-    mcp_thread = threading.Thread(target=run_mcp, daemon=True)
-    mcp_thread.start()
-    log("✅ MCP server started on port 10001")
-    
-    # Run Flask app on port 10000
+
+    # Run Flask app on Render's assigned port
     port = int(os.environ.get("PORT", 10000))
     log(f"🌐 Starting Flask server on port {port}...")
     app.run(host="0.0.0.0", port=port, threaded=True, debug=False)
