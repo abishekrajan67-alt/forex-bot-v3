@@ -20,10 +20,15 @@ also a hard block (see pair_config, Stage 6).
 This module is pair-agnostic: pass in pre-fetched candle data for
 every timeframe + DXY, and it returns a signal dict or None.
 """
+import sys
 from market_structure import structure_snapshot
 from liquidity_sweep import latest_relevant_sweep, sweep_supports_side
 from order_blocks import active_order_blocks, nearest_order_block
 from correlation_filter import correlation_check
+
+def log(msg):
+    """Print to stderr to avoid closed stdout issues"""
+    print(msg, file=sys.stderr, flush=True)
 
 
 # ======================================================
@@ -227,4 +232,4 @@ def build_signal_v3(
 
 
 if __name__ == "__main__":
-    print("signal_engine_v3 loaded OK - run via main.py with real/replay data, not standalone.")
+    log("signal_engine_v3 loaded OK - run via main.py with real/replay data, not standalone.")
