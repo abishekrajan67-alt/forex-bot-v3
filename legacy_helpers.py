@@ -1,11 +1,16 @@
 """
 LEGACY HELPERS
 """
+import sys
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 NY_TZ = ZoneInfo("America/New_York")
 LITHUANIA_TZ = ZoneInfo("Europe/Vilnius")
+
+def log(msg):
+    """Print to stderr to avoid closed stdout issues"""
+    print(msg, file=sys.stderr, flush=True)
 
 def parse_time(c):
     return datetime.fromisoformat(c["time"]).astimezone(timezone.utc) if "T" in c["time"] or "+" in c["time"] else datetime.fromisoformat(c["time"]).replace(tzinfo=timezone.utc)
