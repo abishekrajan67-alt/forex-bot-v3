@@ -363,8 +363,10 @@ def run_pair_scan(pair):
         return signal
     except Exception as e:
         import traceback
-        print(f"{pair}: ERROR: {str(e)}")
-        print(traceback.format_exc())
+        # Use sys.stderr to avoid closed stdout issue
+        import sys
+        print(f"{pair}: ERROR: {str(e)}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
         _bot_status["last_scan_result"] = f"ERROR: {str(e)}"
         return None
 
@@ -417,39 +419,43 @@ def run_bot_loop():
                             last_signal_side[pair] = signal["side"]
                 time.sleep(PAIR_DELAY_SECONDS)
             except Exception as e:
-                print(f"{pair}: Error: {e}")
+                import sys
+                print(f"{pair}: Error: {e}", file=sys.stderr)
         time.sleep(SCAN_SECONDS)
 
 # ========== MAIN ENTRY POINT ==========
 
 if __name__ == "__main__":
-    print("🚀 Starting Forex Bot V3 + MCP...")
+    import sys
+    
+    print("🚀 Starting Forex Bot V3 + MCP...", file=sys.stderr)
     
     # Start trading bot in background
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
-    print("✅ Trading bot started in background")
+    print("✅ Trading bot started in background", file=sys.stderr)
     
-    # Mount Flask app as middleware on MCP
-    # This makes both MCP and Flask routes available
-    try:
-        from mcp.server.fastmcp.middleware import FlaskMiddleware
-        mcp.add_middleware(FlaskMiddleware(app))
-        print("✅ Flask routes mounted on MCP")
-    except (ImportError, AttributeError) as e:
-        print(f"⚠️ Could not mount Flask middleware: {e}")
-        print("⚠️ Flask routes will be available separately")
+    # Start MCP server in a separate thread
+    def run_mcp_server():
+        try:
+            # Set host and port
+            try:
+                mcp.settings.host = "0.0.0.0"
+                mcp.settings.port = int(os.environ.get("PORT", 10000))
+            except AttributeError:
+                mcp.host = "0.0.0.0"
+                mcp.port = int(os.environ.get("PORT", 10000))
+            
+            print("🔄 Starting MCP server...", file=sys.stderr)
+            mcp.run()
+        except Exception as e:
+            print(f"MCP server error: {e}", file=sys.stderr)
     
-    # Set host and port
-    try:
-        mcp.settings.host = "0.0.0.0"
-        mcp.settings.port = int(os.environ.get("PORT", 10000))
-    except AttributeError:
-        mcp.host = "0.0.0.0"
-        mcp.port = int(os.environ.get("PORT", 10000))
+    mcp_thread = threading.Thread(target=run_mcp_server, daemon=True)
+    mcp_thread.start()
+    print("✅ MCP server started in background", file=sys.stderr)
     
-    # Run MCP server (which now includes Flask routes)
-    print(f"🌐 Starting server on port {os.environ.get('PORT', 10000)}...")
-    print("📡 MCP endpoint: /mcp")
-    print("🌐 Flask endpoints: /, /gold, /goldprice, etc.")
-    mcp.run()
+    # Run Flask app (this keeps the process alive)
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Starting Flask server on port {port}...", file=sys.stderr)
+    app.run(host="0.0.0.0", port=port, threaded=True, debug=False)
