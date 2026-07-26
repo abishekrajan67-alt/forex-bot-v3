@@ -406,7 +406,16 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
 
-    # Correct way for current FastMCP version
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = int(os.environ.get("PORT", 10000))
+    # Run MCP server - standard FastMCP approach
+    # Set host and port for the MCP server
+    try:
+        # Try to set via settings
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = int(os.environ.get("PORT", 10000))
+    except AttributeError:
+        # If settings doesn't exist, set directly
+        mcp.host = "0.0.0.0"
+        mcp.port = int(os.environ.get("PORT", 10000))
+    
+    # Run the MCP server with streamable HTTP transport
     mcp.run(transport="streamable-http")
