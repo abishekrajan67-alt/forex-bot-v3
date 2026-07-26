@@ -27,17 +27,9 @@ from telegram_alerts import send_telegram, send_signal_v3
 
 # ========== MCP ==========
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 import httpx
 
-mcp = FastMCP(
-    "Forex Bot",
-    stateless_http=True,
-    json_response=True,
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=False
-    )
-)
+mcp = FastMCP("Forex Bot", stateless_http=True, json_response=True)
 
 @mcp.tool()
 async def get_gold_price() -> dict:
@@ -48,7 +40,7 @@ async def get_gold_price() -> dict:
 
 @mcp.tool()
 async def get_gold_data() -> dict:
-    """Get full gold data (price + EMA + candles)"""
+    """Get full gold data (price + EMA + M5/M1 candles)"""
     async with httpx.AsyncClient() as client:
         r = await client.get("https://forex-bot-v3-gold.onrender.com/gold")
         return r.json()
@@ -295,6 +287,21 @@ def goldprice():
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
+@app.route("/mcp/test", methods=["GET"])
+def mcp_test():
+    """Simple test endpoint for MCP"""
+    return {
+        "status": "ok",
+        "message": "MCP server is running",
+        "tools": [
+            {"name": "get_gold_price", "description": "Get current XAU/USD spot price"},
+            {"name": "get_gold_data", "description": "Get full gold data (price + EMA + candles)"}
+        ],
+        "endpoint": "/mcp",
+        "transport": "streamable-http",
+        "note": "Use Accept: text/event-stream header for SSE connection"
+    }
+
 def run_pair_scan(pair):
     cfg = get_pair_config(pair)
     _bot_status["last_scan_at"] = datetime.now(timezone.utc).isoformat()
@@ -406,16 +413,6 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
     bot_thread.start()
 
-    # Run MCP server - standard FastMCP approach
-    # Set host and port for the MCP server
-    try:
-        # Try to set via settings
-        mcp.settings.host = "0.0.0.0"
-        mcp.settings.port = int(os.environ.get("PORT", 10000))
-    except AttributeError:
-        # If settings doesn't exist, set directly
-        mcp.host = "0.0.0.0"
-        mcp.port = int(os.environ.get("PORT", 10000))
-    
-    # Run the MCP server with streamable HTTP transport
-    mcp.run(transport="streamable-http")
+    # Start MCP server (this is what Claude will connect to)
+    # The Flask health server runs on the same port via the MCP server
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
