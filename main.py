@@ -381,6 +381,34 @@ def ethusd_data():
         return {"status": "error", "message": str(e)}, 500
 
 
+@app.route("/goldprice", methods=["GET"])
+def goldprice():
+    """Live XAU/USD spot price from GoldAPI.io — real precious metals feed"""
+    import requests as req
+    try:
+        resp = req.get(
+            "https://www.goldapi.io/api/XAU/USD",
+            headers={
+                "x-access-token": "goldapi-2b3ee317d47f336fa5b15d006845d474-io",
+                "Content-Type": "application/json"
+            },
+            timeout=10
+        ).json()
+        return {
+            "status": "ok",
+            "price": resp.get("price"),
+            "open": resp.get("open_price"),
+            "high": resp.get("high_price"),
+            "low": resp.get("low_price"),
+            "change": resp.get("ch"),
+            "change_pct": resp.get("chp"),
+            "timestamp": resp.get("timestamp"),
+            "source": "GoldAPI.io — real XAU/USD spot"
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
