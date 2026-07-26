@@ -1,51 +1,61 @@
 """
-TELEGRAM ALERTS V3 - Attractive Version
+TELEGRAM ALERTS
 """
 import os
+import sys
 import requests
-from dotenv import load_dotenv
-from legacy_helpers import lithuania_time, ny_time, current_session
+from datetime import datetime, timezone
 
-load_dotenv()
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-print("TELEGRAM DEBUG: TOKEN=", bool(TELEGRAM_TOKEN), "CHAT_ID=", bool(TELEGRAM_CHAT_ID))
+def log(msg):
+    """Print to stderr to avoid closed stdout issues"""
+    print(msg, file=sys.stderr, flush=True)
 
 def send_telegram(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Missing Telegram credentials.")
-        return
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    
+    if not token or not chat_id:
+        log(f"TELEGRAM DEBUG: TOKEN={bool(token)} CHAT_ID={bool(chat_id)}")
+        log("Missing Telegram credentials.")
+        return False
+    
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
-        print("Telegram sent" if r.ok else f"Telegram error: {r.text}")
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
+        resp = requests.post(url, json=payload, timeout=10)
+        if resp.status_code != 200:
+            log(f"Telegram error: {resp.status_code} {resp.text}")
+            return False
+        return True
     except Exception as e:
-        print("Telegram exception:", e)
+        log(f"Telegram send error: {e}")
+        return False
 
-def send_signal_v3(s):
-    emoji = "🟢" if s["side"] == "BUY" else "🔴"
-    reasons = "\n".join([f"✅ {r}" for r in s.get("reasons", [])])
-    warnings = "\n".join([f"⚠️ {w}" for w in s.get("warnings", [])]) or "None"
+def send_signal_v3(signal):
+    pair = signal["pair"]
+    side = signal["side"]
+    entry = signal["entry"]
+    sl = signal["stop_loss"]
+    tp = signal["take_profit"]
+    rr = signal["rr"]
+    conf = signal["confidence"]
+    reasons = signal.get("reasons", [])
+    warnings = signal.get("warnings", [])
+    
+    msg = f"""<b>🚨 FOREX BOT V3 SIGNAL</b>
+<b>{pair}</b> - <b>{side}</b>
+Entry: {entry}
+Stop Loss: {sl}
+Take Profit: {tp}
+R:R: {rr}
+Confidence: {conf}%
 
-    message = f"""
-{emoji} <b>{s['pair']} {s['side']} SIGNAL</b>
+<b>Reasons:</b>
+{chr(10).join(f'• {r}' for r in reasons[:5])}
 
-📍 <b>Entry:</b> <code>{s['entry']}</code>
-🛑 <b>SL:</b> <code>{s['stop_loss']}</code>
-🎯 <b>TP:</b> <code>{s['take_profit']}</code>
-📊 <b>RR:</b> {s['rr']}x | Confidence: <b>{s['confidence']}%</b>
+<b>Warnings:</b>
+{chr(10).join(f'• {w}' for w in warnings[:3]) if warnings else 'None'}
 
-🕒 <b>Time:</b> {lithuania_time()} (LT) | {ny_time()} (NY)
-Session: {current_session()}
-
-<b>HTF Structure:</b> {s['htf_aligned_count']}/3 aligned
-<b>PD Array:</b> {s['pd_type']} @ {s['pd_array']['low']}-{s['pd_array']['high']}
-
-{reasons}
-
-⚠️ <b>Warnings:</b>
-{warnings}
+<b>Timestamp:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 """
-    send_telegram(message)
+    return send_telegram(msg)
